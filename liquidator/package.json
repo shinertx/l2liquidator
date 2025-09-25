@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "ts-node --transpile-only offchain/orchestrator.ts",
     "build": "tsc -p .",
-    "lint": "eslint . --ext .ts"
+  "lint": "eslint . --ext .ts",
+  "feed:check": "ts-node --transpile-only offchain/tools/feed-check.ts",
+  "quote:check": "ts-node --transpile-only offchain/tools/quote-check.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
