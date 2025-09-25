@@ -12,8 +12,12 @@ export type Candidate = {
 
 // Subgraph endpoints (configurable via env vars to allow alternative indexers or hosted mirrors)
 const SUBGRAPH_URL: Record<number, string> = {
+  1: process.env.AAVE_V3_SUBGRAPH_ETH || '',
   42161: process.env.AAVE_V3_SUBGRAPH_ARB || 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-arbitrum',
   10: process.env.AAVE_V3_SUBGRAPH_OP || 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-optimism',
+  8453: process.env.AAVE_V3_SUBGRAPH_BASE || '',
+  // The legacy Polygon endpoint has been removed; require an explicit env override (e.g., Gateway/Messari mirror)
+  137: process.env.AAVE_V3_SUBGRAPH_POLYGON || '',
 };
 
 // Messari-standardized Aave subgraph schema: fetch positions separately for debt (BORROWER) and collateral
@@ -148,7 +152,7 @@ export async function* streamCandidates(cfg: AppConfig): AsyncGenerator<Candidat
       const chain = chainById(cfg, market.chainId);
       if (!chain || !chain.enabled) continue;
 
-  const subgraph = SUBGRAPH_URL[market.chainId];
+      const subgraph = SUBGRAPH_URL[market.chainId];
       if (!subgraph) {
         log.warn({ chainId: market.chainId }, 'missing-subgraph-url');
         continue;

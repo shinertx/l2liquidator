@@ -7,10 +7,17 @@ type RpcClient = PublicClient<Transport, Chain | undefined, any>;
 const ORACLE_TTL_MS = 15_000;
 const ROUTE_TTL_MS = 5_000;
 
+type OracleDetail = {
+  priceUsd?: number;
+  updatedAt?: number;
+  decimals?: number;
+  stale: boolean;
+};
+
 type OracleCacheEntry = {
-  value: number | undefined;
+  value: OracleDetail | undefined;
   expires: number;
-  pending?: Promise<number | undefined>;
+  pending?: Promise<OracleDetail | undefined>;
 };
 
 type RouteCacheEntry = {
@@ -31,8 +38,8 @@ function cacheKeyRoute(chain: ChainCfg, collateral: TokenInfo, debt: TokenInfo, 
   return `${chain.id}:${router.toLowerCase()}:${collateral.address.toLowerCase()}:${debt.address.toLowerCase()}:${fee}`;
 }
 
-async function loadOraclePrice(client: RpcClient, token: TokenInfo): Promise<number | undefined> {
-  if (!token.chainlinkFeed) return undefined;
+async function loadOracleDetail(client: RpcClient, token: TokenInfo): Promise<OracleDetail | undefined> {
+  if (!token.chainlinkFeed) return { stale: true };
   try {
     const decimals = (await client.readContract({
       address: token.chainlinkFeed,
@@ -51,15 +58,19 @@ async function loadOraclePrice(client: RpcClient, token: TokenInfo): Promise<num
     const answer = result[1];
     const updatedAt = result[3];
     const now = BigInt(Math.floor(Date.now() / 1000));
-  // stale or invalid feed → undefined
-  if (answer <= 0n || updatedAt === 0n || now - updatedAt > BigInt(ORACLE_TTL_MS / 1000)) return undefined;
-    return Number(answer) / 10 ** decimals;
+    const stale = answer <= 0n || updatedAt === 0n || now - updatedAt > BigInt(ORACLE_TTL_MS / 1000);
+    return {
+      priceUsd: stale ? undefined : Number(answer) / 10 ** decimals,
+      updatedAt: Number(updatedAt),
+      decimals,
+      stale,
+    };
   } catch (_err) {
-    return undefined;
+    return { stale: true };
   }
 }
 
-async function cachedOraclePrice(client: RpcClient, token: TokenInfo): Promise<number | undefined> {
+async function cachedOracleDetail(client: RpcClient, token: TokenInfo): Promise<OracleDetail | undefined> {
   const key = cacheKeyOracle(token);
   if (!key) return undefined;
   const now = Date.now();
@@ -70,7 +81,7 @@ async function cachedOraclePrice(client: RpcClient, token: TokenInfo): Promise<n
   if (entry?.pending) {
     return entry.pending;
   }
-  const pending = loadOraclePrice(client, token).then((value) => {
+  const pending = loadOracleDetail(client, token).then((value) => {
     oracleCache.set(key, { value, expires: Date.now() + ORACLE_TTL_MS });
     return value;
   });
@@ -155,7 +166,31 @@ function toNumber(amount: bigint, decimals: number): number {
 }
 
 export async function oraclePriceUsd(client: RpcClient, token: TokenInfo): Promise<number | undefined> {
-  return cachedOraclePrice(client, token);
+  const detail = await cachedOracleDetail(client, token);
+  return detail?.priceUsd;
+}
+
+export async function oraclePriceDetails(client: RpcClient, token: TokenInfo) {
+  const detail = await cachedOracleDetail(client, token);
+  if (!detail) {
+    return {
+      priceUsd: undefined,
+      updatedAt: undefined,
+      ageSeconds: undefined,
+      stale: true,
+      hasFeed: Boolean(token.chainlinkFeed),
+    };
+  }
+  const updatedAt = detail.updatedAt ? Number(detail.updatedAt) : undefined;
+  const ageSeconds = updatedAt ? Math.max(0, Math.floor(Date.now() / 1000) - updatedAt) : undefined;
+  return {
+    priceUsd: detail.priceUsd,
+    updatedAt,
+    ageSeconds,
+    stale: detail.stale,
+    decimals: detail.decimals,
+    hasFeed: Boolean(token.chainlinkFeed),
+  };
 }
 
 export async function oracleDexGapBps({
@@ -173,8 +208,10 @@ export async function oracleDexGapBps({
   fee: number;
   router?: string;
 }): Promise<number> {
-  const collateralPriceUsd = await cachedOraclePrice(client, collateral);
-  const debtPriceUsd = (await cachedOraclePrice(client, debt)) ?? 1;
+  const collateralDetail = await cachedOracleDetail(client, collateral);
+  const debtDetail = await cachedOracleDetail(client, debt);
+  const collateralPriceUsd = collateralDetail?.priceUsd;
+  const debtPriceUsd = debtDetail?.priceUsd ?? 1;
 
   const oraclePrice = collateralPriceUsd !== undefined ? collateralPriceUsd / debtPriceUsd : undefined;
 

@@ -21,12 +21,17 @@ CREATE TABLE IF NOT EXISTS liquidation_attempts (
   status TEXT NOT NULL,
   reason TEXT,
   tx_hash TEXT,
+  details JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )`;
 
 const CREATE_INDEX = `
 CREATE INDEX IF NOT EXISTS idx_liquidation_attempts_chain_borrower_created
   ON liquidation_attempts(chain_id, borrower, created_at DESC)`;
+
+const ADD_DETAILS_COLUMN = `
+ALTER TABLE liquidation_attempts
+  ADD COLUMN IF NOT EXISTS details JSONB`;
 
 export type AttemptStatus =
   | 'throttled'
@@ -42,6 +47,7 @@ export async function ensureAttemptTable(): Promise<void> {
   try {
     await db.query(CREATE_TABLE);
     await db.query(CREATE_INDEX);
+    await db.query(ADD_DETAILS_COLUMN);
   } catch (err) {
     log.warn({ err: (err as Error).message }, 'attempt-table-init-failed');
   }
@@ -53,13 +59,21 @@ export async function recordAttemptRow(params: {
   status: AttemptStatus;
   reason?: string;
   txHash?: `0x${string}`;
+  details?: Record<string, unknown> | null;
 }): Promise<void> {
-  const { chainId, borrower, status, reason, txHash } = params;
+  const { chainId, borrower, status, reason, txHash, details } = params;
   if (!ensureDb('record')) return;
   try {
     await db.query(
-      'INSERT INTO liquidation_attempts (chain_id, borrower, status, reason, tx_hash) VALUES ($1, $2, $3, $4, $5)',
-      [chainId, borrower.toLowerCase(), status, reason ?? null, txHash ?? null]
+      'INSERT INTO liquidation_attempts (chain_id, borrower, status, reason, tx_hash, details) VALUES ($1, $2, $3, $4, $5, $6)',
+      [
+        chainId,
+        borrower.toLowerCase(),
+        status,
+        reason ?? null,
+        txHash ?? null,
+        details ? JSON.stringify(details) : null,
+      ]
     );
   } catch (err) {
     log.warn({ err: (err as Error).message }, 'attempt-row-insert-failed');

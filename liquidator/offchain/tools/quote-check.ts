@@ -5,15 +5,21 @@ import { log } from '../infra/logger';
 
 const QUOTER_V2_ABI = [
   {
-    type: 'function',
     name: 'quoteExactInputSingle',
-    stateMutability: 'view',
+    type: 'function',
+    stateMutability: 'nonpayable',
     inputs: [
-      { name: 'tokenIn', type: 'address' },
-      { name: 'tokenOut', type: 'address' },
-      { name: 'fee', type: 'uint24' },
-      { name: 'amountIn', type: 'uint256' },
-      { name: 'sqrtPriceLimitX96', type: 'uint160' },
+      {
+        name: 'params',
+        type: 'tuple',
+        components: [
+          { name: 'tokenIn', type: 'address' },
+          { name: 'tokenOut', type: 'address' },
+          { name: 'amountIn', type: 'uint256' },
+          { name: 'fee', type: 'uint24' },
+          { name: 'sqrtPriceLimitX96', type: 'uint160' },
+        ],
+      },
     ],
     outputs: [
       { name: 'amountOut', type: 'uint256' },
@@ -61,13 +67,14 @@ async function checkChainQuotes(chain: ChainCfg) {
   for (const fee of fees) {
     try {
       const quoter = getAddress(chain.quoter as Address);
-      const out = await client.readContract({
+      const { result } = await client.simulateContract({
         address: quoter,
         abi: QUOTER_V2_ABI as any,
         functionName: 'quoteExactInputSingle',
-        args: [usdcAddr, wethAddr, fee, amountIn, 0n],
+        args: [{ tokenIn: usdcAddr, tokenOut: wethAddr, amountIn, fee, sqrtPriceLimitX96: 0n }],
+        account: usdcAddr,
       });
-      const amountOut = (out as any).amountOut ?? (Array.isArray(out) ? (out as any)[0] : out);
+      const amountOut = (result as any)[0] as bigint;
       log.info({ chain: chain.id, dex: 'UniV3', fee, amountIn: amountIn.toString(), amountOut: amountOut.toString() }, 'quote');
     } catch (err) {
       log.error({ chain: chain.id, dex: 'UniV3', fee, err: (err as Error).message, quoter: chain.quoter }, 'quote-error');
