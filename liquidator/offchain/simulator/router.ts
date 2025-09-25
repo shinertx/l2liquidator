@@ -95,20 +95,21 @@ async function quoteUniV3(
   debt: TokenInfo,
   seizeAmount: bigint
 ): Promise<bigint> {
-  const [amountOut] = (await client.readContract({
+  const { result } = await client.simulateContract({
     address: getAddress(chain.quoter as Address),
     abi: QUOTER_ABI,
     functionName: 'quoteExactInputSingle',
     args: [
       {
-        tokenIn: collateral.address,
-        tokenOut: debt.address,
+        tokenIn: getAddress(collateral.address as Address),
+        tokenOut: getAddress(debt.address as Address),
         amountIn: seizeAmount,
         fee: option.fee,
         sqrtPriceLimitX96: 0n,
       },
     ],
-  })) as [bigint, bigint, number, bigint];
+  });
+  const [amountOut] = result as unknown as [bigint, bigint, number, bigint];
   return amountOut;
 }
 

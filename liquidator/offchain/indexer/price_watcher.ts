@@ -38,18 +38,21 @@ async function loadOraclePrice(client: RpcClient, token: TokenInfo): Promise<num
       address: token.chainlinkFeed,
       abi: FEED_ABI,
       functionName: 'decimals',
+      args: [],
     })) as number;
 
     const result = (await client.readContract({
       address: token.chainlinkFeed,
       abi: FEED_ABI,
       functionName: 'latestRoundData',
+      args: [],
     })) as [bigint, bigint, bigint, bigint, bigint];
 
     const answer = result[1];
     const updatedAt = result[3];
     const now = BigInt(Math.floor(Date.now() / 1000));
-    if (answer <= 0n || updatedAt === 0n || now - updatedAt > BigInt(ORACLE_TTL_MS / 1000)) return undefined;
+  // stale or invalid feed → undefined
+  if (answer <= 0n || updatedAt === 0n || now - updatedAt > BigInt(ORACLE_TTL_MS / 1000)) return undefined;
     return Number(answer) / 10 ** decimals;
   } catch (_err) {
     return undefined;

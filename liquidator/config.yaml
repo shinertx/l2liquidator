@@ -2,8 +2,8 @@ beneficiary: "0x89A6b89718baCdF5D717877ded7E6E12D25479A6"
 
 contracts:
   liquidator:
-  42161: "0x727BB7c8C0F1Fc150F6d23Df197e639Af4506d91"
-  10: "0xEd4dB6eA97B7F9A877f529db65976702083CA64B"
+    42161: "0x727BB7c8C0F1Fc150F6d23Df197e639Af4506d91"
+    10: "0xEd4dB6eA97B7F9A877f529db65976702083CA64B"
 
 chains:
   - id: 42161
@@ -18,7 +18,7 @@ chains:
       USDC:
         address: "0xaf88d065e77c8cC2239327c5EdB3A432268e5831"
         decimals: 6
-        chainlinkFeed: "0x50834f3163758fcc1df9973b6e91b93b041d1466"
+        chainlinkFeed: "0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3"
       WETH:
         address: "0x82af49447d8a07e3bd95bd0d56f35241523fbab1"
         decimals: 18
@@ -93,7 +93,7 @@ markets:
     chainId: 42161
     debtAsset: USDC
     collateralAsset: WETH
-    closeFactorBps: 4850
+    closeFactorBps: 5000
     bonusBps: 800
     enabled: true
 
@@ -101,12 +101,12 @@ markets:
     chainId: 10
     debtAsset: USDC
     collateralAsset: WETH
-    closeFactorBps: 4850
+    closeFactorBps: 5000
     bonusBps: 800
     enabled: true
 
 risk:
-  gasCapUsd: 2.0
+  gasCapUsd: 8.0
   failRateCap: 0.25
   pnlPerGasMin: 2.5
   maxAttemptsPerBorrowerHour: 1
@@ -115,9 +115,9 @@ risk:
 routing:
   prefer:
     42161:
-      USDC-WETH: ["UniV3:500","Camelot"]
+      USDC-WETH: ["UniV3:500","UniV3:3000","Camelot"]
     10:
-      USDC-WETH: ["UniV3:500","Velodrome"]
+      USDC-WETH: ["UniV3:500","UniV3:3000","Velodrome"]
 dexRouters:
   42161:
     uniV3: "0xe592427a0AEce92De3Edee1F18E0157C05861564"
