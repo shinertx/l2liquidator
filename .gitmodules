@@ -1,0 +1,3 @@
+[submodule "liquidator/lib/forge-std"]
+	path = liquidator/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std

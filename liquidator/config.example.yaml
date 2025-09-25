@@ -1,0 +1,171 @@
+contracts:
+  liquidator:
+    42161: "0x..."
+    10: "0x..."
+
+chains:
+  - id: 42161   # Arbitrum
+    name: arbitrum
+    rpc: ${RPC_ARB}
+    privtx: ${PRIVTX_ARB}
+    aaveProvider: "0xa97684EaD0E402dC232d5A977953DF7ECBaB3CDb"  # PoolAddressesProvider
+    uniV3Router: "0x..."     # Uniswap V3 Router02
+    quoter: "0x..."          # Uniswap V3 Quoter V2
+    enabled: true
+    tokens:
+      USDC:
+        address: "0x..."
+        decimals: 6
+        chainlinkFeed: "0x..." # optional
+      WETH:
+        address: "0x..."
+        decimals: 18
+        chainlinkFeed: "0x..."
+  - id: 10      # Optimism
+    name: optimism
+    rpc: ${RPC_OP}
+    privtx: ${PRIVTX_OP}
+    aaveProvider: "0xa97684EaD0E402dC232d5A977953DF7ECBaB3CDb"
+    uniV3Router: "0x..."
+    quoter: "0x..."
+    enabled: false
+    tokens:
+      USDC:
+        address: "0x..."
+        decimals: 6
+      WETH:
+        address: "0x..."
+        decimals: 18
+        chainlinkFeed: "0x..."
+
+assets:
+  USDC:
+    floorBps: 80
+    gapCapBps: 40
+    slippageBps: 20
+  WETH:
+    floorBps: 120
+    gapCapBps: 60
+    slippageBps: 25
+
+markets:
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: USDC
+    collateralAsset: WETH
+    closeFactorBps: 4850
+    bonusBps: 800
+    enabled: true
+  - protocol: aavev3
+    chainId: 10
+    debtAsset: USDC
+    collateralAsset: WETH
+    closeFactorBps: 4850
+    bonusBps: 800
+    enabled: false
+
+risk:
+  gasCapUsd: 2.0
+  failRateCap: 0.25
+  pnlPerGasMin: 2.5
+  maxAttemptsPerBorrowerHour: 2
+  dryRun: false
+
+routing:
+  prefer:
+    42161:
+      USDC-WETH: ["UniV3:500","Camelot"]
+    10:
+      USDC-WETH: ["UniV3:500","Velodrome"]
+    8453:
+      USDC-WETH: ["UniV3:500","Aerodrome"]
+    137:
+      USDC-WETH: ["UniV3:500"]
+  
+dexRouters:
+  42161:
+    uniV3: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+    camelotV2: "0xc873fEcbd354f5A56E00E710B90EF4201db2448d"
+    tokens:
+      USDC: "0xaf88d065e77c8cC2239327c5EdB3A432268e5831"
+      WETH: "0x82Af49447D8a07e3Bd95BD0d56F35241523fBaB1"
+  10:
+    uniV3: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+    velodrome: "0xa062aE8A9c5e11aaA026fc2670B0D65cCc8B2858"
+    velodromeFactory: "0xF1046053aa5682b4F9a81b5481394DA16BE5FF5a"
+    tokens:
+      USDC: "0x0B2c639c533813f4aa9d7837cAf62653d097Ff85"
+      WETH: "0x4200000000000000000000000000000000000006"
+  8453:
+    uniV3: "0x2626664c2603336E57B271c5C0b26F421741e481"
+    aerodrome: "0xcF77A3bA9A5cA399B7c97C74D54e5B1bEb874e43"
+    aerodromeFactory: "0x420DD381b31aEf6683db6B902084cB0FFECe40Da"
+    tokens:
+      USDC: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+      WETH: "0x4200000000000000000000000000000000000006"
+  137:
+    uniV3: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+    tokens:
+      USDC: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
+      WETH: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619"
+    8453:
+      USDC-WETH: ["UniV3:500","Aerodrome"]
+    137:
+      USDC-WETH: ["UniV3:500"]
+dexRouters:
+  42161:
+    uniV3: "0xe592427a0AEce92De3Edee1F18E0157C05861564"
+    camelotV2: "0xc873fEcbd354f5A56E00E710B90EF4201db2448d"
+    tokens:
+      USDC: "0xff970a61a04b1ca14834a43f5de4533ebddb5cc8"
+      WETH: "0x82Af49447D8a07e3Bd95BD0d56F35241523fBaB1"
+  10:
+    uniV3: "0xe592427a0AEce92De3Edee1F18E0157C05861564"
+    velodrome: "0xa062aE8A9c5e11aaA026fc2670B0D65cCc8B2858"
+    # velodromeFactory: "0x..."   # set to Velodrome V2 factory when known
+    tokens:
+      USDC: "0x0B2c639c533813f4aa9d7837cAf62653d097Ff85"
+      WETH: "0x4200000000000000000000000000000000000006"
+  8453:
+    uniV3: "0xe592427a0AEce92De3Edee1F18E0157C05861564"
+    aerodrome: "0xcF77A3bA9A5cA399B7c97C74D54e5B1bEb874e43"
+    # aerodromeFactory: "0x..."   # set to Aerodrome factory when known
+    tokens:
+      USDC: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+      WETH: "0x4200000000000000000000000000000000000006"
+  137:
+    uniV3: "0xe592427a0AEce92De3Edee1F18E0157C05861564"
+    tokens:
+      USDC: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
+      WETH: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619"
+  - id: 8453    # Base (optional)
+    name: base
+    rpc: ${RPC_BASE}
+    privtx: ${PRIVTX_BASE}
+    aaveProvider: "TODO_AAVE_V3_PROVIDER_BASE"
+    uniV3Router: "0x2626664c2603336E57B271c5C0b26F421741e481"  # SwapRouter02
+    quoter: "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a"
+    enabled: false
+    tokens:
+      USDC:
+        address: "0x833589fcd6EDB6E08f4c7C32D4f71B54bDa02913"
+        decimals: 6
+      WETH:
+        address: "0x4200000000000000000000000000000000000006"
+        decimals: 18
+
+  - id: 137     # Polygon PoS (optional)
+    name: polygon
+    rpc: ${RPC_POLYGON}
+    privtx: ${PRIVTX_POLYGON}
+    aaveProvider: "0xa97684EaD0E402dC232d5A977953DF7ECBaB3CDb"
+    uniV3Router: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+    quoter: "0x61ffe014ba17989e743c5f6cb21bf9697530b21e"
+    enabled: false
+    tokens:
+      USDC:
+        address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
+        decimals: 6
+      WETH:
+        address: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619"
+        decimals: 18

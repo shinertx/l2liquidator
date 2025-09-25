@@ -1,0 +1,36 @@
+# Root ignores
+node_modules/
+.DS_Store
+*.log
+npm-debug.log*
+yarn-error.log
+*.pid
+
+# Env & secrets
+.env
+*.env
+!/liquidator/.env.sample
+liquidator/.env
+
+# Build artifacts
+liquidator/dist/
+dist/
+coverage/
+logs/
+broadcast/
+liquidator/broadcast/
+
+# Foundry / Solidity
+cache/
+out/
+forge-artifacts/
+
+# TypeScript
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+
+# Process/runtime artifacts
+liquidator/.orchestrator.pid

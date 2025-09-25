@@ -1,0 +1,18 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: liquidator
+      POSTGRES_PASSWORD: liquidator
+      POSTGRES_DB: liquidator
+    ports: ["5432:5432"]
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+  worker:
+    build: ./ops
+    env_file:
+      - .env
+    command: ["node","/app/dist/offchain/orchestrator.js"]
+    depends_on: [db, redis]

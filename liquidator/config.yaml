@@ -1,0 +1,134 @@
+beneficiary: "0x89A6b89718baCdF5D717877ded7E6E12D25479A6"
+
+contracts:
+  liquidator:
+  42161: "0x727BB7c8C0F1Fc150F6d23Df197e639Af4506d91"
+  10: "0xEd4dB6eA97B7F9A877f529db65976702083CA64B"
+
+chains:
+  - id: 42161
+    name: arbitrum
+    rpc: ${RPC_ARB}
+    privtx: ${PRIVTX_ARB}
+    aaveProvider: "0xa97684EaD0E402dC232d5A977953DF7ECBaB3CDb"
+    uniV3Router: "0xe592427a0aece92de3edee1f18e0157c05861564"
+    quoter: "0x61ffe014ba17989e743c5f6cb21bf9697530b21e"
+    enabled: true
+    tokens:
+      USDC:
+        address: "0xaf88d065e77c8cC2239327c5EdB3A432268e5831"
+        decimals: 6
+        chainlinkFeed: "0x50834f3163758fcc1df9973b6e91b93b041d1466"
+      WETH:
+        address: "0x82af49447d8a07e3bd95bd0d56f35241523fbab1"
+        decimals: 18
+        chainlinkFeed: "0x639fe6ab55c921f74e7fac1ee960c0b6293ba612"
+
+  - id: 10
+    name: optimism
+    rpc: ${RPC_OP}
+    privtx: ${PRIVTX_OP}
+    aaveProvider: "0xa97684EaD0E402dC232d5A977953DF7ECBaB3CDb"
+    uniV3Router: "0xe592427a0aece92de3edee1f18e0157c05861564"
+    quoter: "0x61ffe014ba17989e743c5f6cb21bf9697530b21e"
+    enabled: true
+    tokens:
+      USDC:
+        address: "0x0B2c639c533813f4aa9d7837cAf62653d097Ff85"
+        decimals: 6
+        chainlinkFeed: ""  # optional
+      WETH:
+        address: "0x4200000000000000000000000000000000000006"
+        decimals: 18
+        chainlinkFeed: ""  # optional
+
+  - id: 8453
+    name: base
+    rpc: ${RPC_BASE}
+    privtx: ${PRIVTX_BASE}
+    aaveProvider: ${BASE_AAVE_V3_PROVIDER}
+    uniV3Router: "0x2626664c2603336E57B271c5C0b26F421741e481" # SwapRouter02
+    quoter: "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a"
+    enabled: false
+    tokens:
+      USDC:
+        address: "0x833589fcd6EDB6E08f4c7C32D4f71B54bDa02913"
+        decimals: 6
+        chainlinkFeed: ""  # optional
+      WETH:
+        address: "0x4200000000000000000000000000000000000006"
+        decimals: 18
+        chainlinkFeed: ""  # optional
+
+  - id: 137
+    name: polygon
+    rpc: ${RPC_POLYGON}
+    privtx: ${PRIVTX_POLYGON}
+    aaveProvider: "0xa97684EaD0E402dC232d5A977953DF7ECBaB3CDb"
+    uniV3Router: "0xe592427a0aece92de3edee1f18e0157c05861564"
+    quoter: "0x61ffe014ba17989e743c5f6cb21bf9697530b21e"
+    enabled: false
+    tokens:
+      USDC:
+        address: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+        decimals: 6
+        chainlinkFeed: ""  # optional
+      WETH:
+        address: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619"
+        decimals: 18
+        chainlinkFeed: ""  # optional
+
+assets:
+  USDC:
+    floorBps: 60
+    gapCapBps: 50
+    slippageBps: 25
+  WETH:
+    floorBps: 60
+    gapCapBps: 60
+    slippageBps: 30
+
+markets:
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: USDC
+    collateralAsset: WETH
+    closeFactorBps: 4850
+    bonusBps: 800
+    enabled: true
+
+  - protocol: aavev3
+    chainId: 10
+    debtAsset: USDC
+    collateralAsset: WETH
+    closeFactorBps: 4850
+    bonusBps: 800
+    enabled: true
+
+risk:
+  gasCapUsd: 2.0
+  failRateCap: 0.25
+  pnlPerGasMin: 2.5
+  maxAttemptsPerBorrowerHour: 1
+  dryRun: true
+
+routing:
+  prefer:
+    42161:
+      USDC-WETH: ["UniV3:500","Camelot"]
+    10:
+      USDC-WETH: ["UniV3:500","Velodrome"]
+dexRouters:
+  42161:
+    uniV3: "0xe592427a0AEce92De3Edee1F18E0157C05861564"
+    camelotV2: "0xc873fEcbd354f5A56E00E710B90EF4201db2448d"
+    tokens:
+      USDC: "0xaf88d065e77c8cC2239327c5EdB3A432268e5831"
+      WETH: "0x82Af49447D8a07e3Bd95BD0d56F35241523fBaB1"
+
+  10:
+    uniV3: "0xe592427a0AEce92De3Edee1F18E0157C05861564"
+    velodrome: "0xa062aE8A9c5e11aaA026fc2670B0D65cCc8B2858"
+    tokens:
+      USDC: "0x0B2c639c533813f4aa9d7837cAf62653d097Ff85"
+      WETH: "0x4200000000000000000000000000000000000006"
