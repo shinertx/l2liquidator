@@ -6,12 +6,10 @@ services:
       POSTGRES_USER: liquidator
       POSTGRES_PASSWORD: liquidator
       POSTGRES_DB: liquidator
-    ports:
-      - "5432:5432"
+    ports: ["5432:5432"]
   redis:
-    image: redis:6-alpine
-    ports:
-      - "6381:6379"
+    image: redis:7-alpine
+    ports: ["6379:6379"]
   worker:
     build: ./ops
     env_file:

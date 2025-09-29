@@ -34,8 +34,3 @@ forge-artifacts/
 
 # Process/runtime artifacts
 liquidator/.orchestrator.pid
-liquidator/config.staged.yaml
-liquidator/config.prev.yaml
-liquidator/config.canary.yaml
-liquidator/agent/
-agent/

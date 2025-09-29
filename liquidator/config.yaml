@@ -2,28 +2,10 @@ beneficiary: "0x89A6b89718baCdF5D717877ded7E6E12D25479A6"
 
 contracts:
   liquidator:
-    1: "0x0000000000000000000000000000000000000000" # placeholder until deployed
     42161: "0x727BB7c8C0F1Fc150F6d23Df197e639Af4506d91"
     10: "0xEd4dB6eA97B7F9A877f529db65976702083CA64B"
 
 chains:
-  - id: 1
-    name: ethereum
-    rpc: ${RPC_ETH}
-    privtx: ${PRIVTX_ETH}
-    aaveProvider: "0xa97684EaD0E402dC232d5A977953DF7ECBaB3CDb"
-    uniV3Router: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
-    quoter: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e"
-    enabled: true
-    tokens:
-      USDC:
-        address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
-        decimals: 6
-        chainlinkFeed: "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6"
-      WETH:
-        address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-        decimals: 18
-        chainlinkFeed: "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419"
   - id: 42161
     name: arbitrum
     rpc: ${RPC_ARB}
@@ -54,20 +36,20 @@ chains:
       USDC:
         address: "0x0B2c639c533813f4aa9d7837cAf62653d097Ff85"
         decimals: 6
-        chainlinkFeed: ""  # optional
+        chainlinkFeed: ""
       WETH:
         address: "0x4200000000000000000000000000000000000006"
         decimals: 18
-        chainlinkFeed: ""  # optional
+        chainlinkFeed: ""
 
   - id: 8453
     name: base
-    rpc: "${RPC_BASE}"
-    privtx: "${PRIVTX_BASE}"
-    aaveProvider: "${BASE_AAVE_V3_PROVIDER}"
-    uniV3Router: "0x2626664c2603336E57B271c5C0b26F421741e481" # SwapRouter02
+    rpc: ${RPC_BASE}
+    privtx: ${PRIVTX_BASE}
+    aaveProvider: ${BASE_AAVE_V3_PROVIDER}
+    uniV3Router: "0x2626664c2603336E57B271c5C0b26F421741e481"
     quoter: "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a"
-    enabled: false # temporarily disabled until subgraph URL is set
+    enabled: false
     tokens:
       USDC:
         address: "0x833589fcd6EDB6E08f4c7C32D4f71B54bDa02913"
@@ -80,12 +62,12 @@ chains:
 
   - id: 137
     name: polygon
-    rpc: "${RPC_POLYGON}"
-    privtx: "${PRIVTX_POLYGON}"
+    rpc: ${RPC_POLYGON}
+    privtx: ${PRIVTX_POLYGON}
     aaveProvider: "0xa97684EaD0E402dC232d5A977953DF7ECBaB3CDb"
     uniV3Router: "0xe592427a0aece92de3edee1f18e0157c05861564"
     quoter: "0x61ffe014ba17989e743c5f6cb21bf9697530b21e"
-    enabled: false # enable when subgraph/RPC are ready
+    enabled: false
     tokens:
       USDC:
         address: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
@@ -107,13 +89,6 @@ assets:
     slippageBps: 30
 
 markets:
-  - protocol: aavev3
-    chainId: 1
-    debtAsset: USDC
-    collateralAsset: WETH
-    closeFactorBps: 4850
-    bonusBps: 800
-    enabled: true
   - protocol: aavev3
     chainId: 42161
     debtAsset: USDC
@@ -155,8 +130,6 @@ risk:
 
 routing:
   prefer:
-    1:
-      USDC-WETH: ["UniV3:500","UniV3:3000"]
     42161:
       USDC-WETH: ["UniV3:500","UniV3:3000","Camelot"]
     10:
@@ -165,12 +138,8 @@ routing:
       USDC-WETH: ["UniV3:500","UniV3:3000","Aerodrome"]
     137:
       USDC-WETH: ["UniV3:500","UniV3:3000"]
+
 dexRouters:
-  1:
-    uniV3: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
-    tokens:
-      USDC: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
-      WETH: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
   42161:
     uniV3: "0xe592427a0AEce92De3Edee1F18E0157C05861564"
     camelotV2: "0xc873fEcbd354f5A56E00E710B90EF4201db2448d"

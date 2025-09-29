@@ -9,11 +9,9 @@ import { streamCandidates } from './indexer/aave_indexer';
 import { oracleDexGapBps, oraclePriceUsd } from './indexer/price_watcher';
 import { simulate } from './simulator/simulate';
 import { sendLiquidation } from './executor/send_tx';
-import { isPrivateConfigured } from './executor/mev_protect';
 import { logPoolsAtBoot } from './infra/aave_provider';
 import { buildRouteOptions } from './util/routes';
 import { emitAlert } from './infra/alerts';
-import { serializeCandidate, serializePlan, serializeRoutes, serializeError, type CandidateSnapshot, type PlanSnapshot } from './util/serialize';
 
 const DEFAULT_CLOSE_FACTOR_BPS = 5000;
 const DEFAULT_BONUS_BPS = 800;
@@ -36,10 +34,6 @@ function publicClient(chain: ChainCfg) {
 
 function privateKeyForChain(chain: ChainCfg): `0x${string}` | undefined {
   switch (chain.name.toLowerCase()) {
-    case 'ethereum':
-    case 'mainnet':
-    case 'eth':
-      return process.env.WALLET_PK_ETH as `0x${string}` | undefined;
     case 'arbitrum':
       return process.env.WALLET_PK_ARB as `0x${string}` | undefined;
     case 'optimism':
@@ -58,9 +52,7 @@ async function main() {
   const cfg = loadConfig();
   await logPoolsAtBoot(cfg);
   await ensureAttemptTable();
-  // Visibility: which chains will use private lanes
-  const privMap = Object.fromEntries(cfg.chains.map(c => [c.id, isPrivateConfigured(c.id)]));
-  log.info({ chains: cfg.chains.length, privateLanes: privMap }, 'boot');
+  log.info({ chains: cfg.chains.length }, 'boot');
 
   for await (const candidate of streamCandidates(cfg)) {
     counter.candidates.inc();
@@ -93,31 +85,12 @@ async function main() {
       continue;
     }
 
-    const policySnapshot = {
-      floorBps: policy.floorBps,
-      gapCapBps: policy.gapCapBps,
-      slippageBps: policy.slippageBps,
-      gasCapUsd: cfg.risk.gasCapUsd,
-    };
-
-    let candidateDetails: CandidateSnapshot = serializeCandidate({
-      candidate,
-      debtToken,
-      collateralToken,
-    });
-    let planSnapshot: PlanSnapshot | undefined;
-
     try {
       const throttleLimit = cfg.risk.maxAttemptsPerBorrowerHour ?? 0;
       if (!cfg.risk.dryRun) {
         if (await isThrottled(chain.id, candidate.borrower, throttleLimit)) {
           counter.throttled.inc();
-          await recordAttemptRow({
-            chainId: chain.id,
-            borrower: candidate.borrower,
-            status: 'throttled',
-            details: { candidate: candidateDetails, policy: policySnapshot },
-          });
+          await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'throttled' });
           log.debug({ borrower: candidate.borrower, chain: chain.id }, 'throttled-skip');
           continue;
         }
@@ -126,12 +99,6 @@ async function main() {
       const debtPriceUsd = (await oraclePriceUsd(client, debtToken)) ?? 1;
       const collPriceUsd = (await oraclePriceUsd(client, collateralToken)) ?? debtPriceUsd;
       const { options: routeOptions, gapFee, gapRouter } = buildRouteOptions(cfg, chain, candidate.debt.symbol, candidate.collateral.symbol);
-      candidateDetails = {
-        ...candidateDetails,
-        debtPriceUsd,
-        collateralPriceUsd: collPriceUsd,
-        routeCandidates: serializeRoutes(routeOptions),
-      };
       const gap = await oracleDexGapBps({
         client,
         chain,
@@ -140,16 +107,9 @@ async function main() {
         fee: gapFee,
         router: gapRouter,
       });
-      candidateDetails = { ...candidateDetails, gapBps: gap };
       if (gap > policy.gapCapBps) {
         counter.gapSkip.inc();
-        await recordAttemptRow({
-          chainId: chain.id,
-          borrower: candidate.borrower,
-          status: 'gap_skip',
-          reason: `gap ${gap}bps`,
-          details: { candidate: candidateDetails, policy: policySnapshot },
-        });
+        await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'gap_skip', reason: `gap ${gap}bps` });
         log.debug({ borrower: candidate.borrower, chain: chain.id, gap }, 'skip-gap');
         continue;
       }
@@ -187,17 +147,9 @@ async function main() {
           gasCapUsd: cfg.risk.gasCapUsd,
           routes: routeOptions.map((r) => r.type),
         }, 'plan-null');
-        await recordAttemptRow({
-          chainId: chain.id,
-          borrower: candidate.borrower,
-          status: 'policy_skip',
-          reason: 'plan-null',
-          details: { candidate: candidateDetails, policy: policySnapshot },
-        });
+        await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason: 'plan-null' });
         continue;
       }
-
-      planSnapshot = serializePlan(plan);
 
       counter.plansReady.inc();
       plansReadyCount += 1;
@@ -207,13 +159,7 @@ async function main() {
 
       if (cfg.risk.dryRun) {
         counter.plansDryRun.inc();
-        await recordAttemptRow({
-          chainId: chain.id,
-          borrower: candidate.borrower,
-          status: 'dry_run',
-          reason: `netBps ${plan.estNetBps.toFixed(2)}`,
-          details: { candidate: candidateDetails, plan: planSnapshot, policy: policySnapshot },
-        });
+        await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'dry_run', reason: `netBps ${plan.estNetBps.toFixed(2)}` });
         log.info({ borrower: candidate.borrower, chain: chain.id, repay: plan.repayAmount.toString(), netBps: plan.estNetBps }, 'DRY-RUN');
         continue;
       }
@@ -234,7 +180,7 @@ async function main() {
       const minProfit = (plan.repayAmount * BigInt(policy.floorBps)) / 10_000n;
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 300);
 
-      const txHash = await sendLiquidation(chain.rpc, chain.id, pk, contract, {
+      await sendLiquidation(chain.rpc, pk, contract, {
         borrower: candidate.borrower,
         debtAsset: candidate.debt.address,
         collateralAsset: candidate.collateral.address,
@@ -249,13 +195,7 @@ async function main() {
         deadline,
       });
       counter.plansSent.inc();
-      await recordAttemptRow({
-        chainId: chain.id,
-        borrower: candidate.borrower,
-        status: 'sent',
-        txHash,
-        details: { candidate: candidateDetails, plan: planSnapshot, policy: policySnapshot },
-      });
+      await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'sent' });
       plansSentCount += 1;
       if (plansReadyCount > 0) {
         gauge.hitRate.set(plansSentCount / plansReadyCount);
@@ -264,14 +204,7 @@ async function main() {
     } catch (err) {
       counter.plansError.inc();
       plansErrorCount += 1;
-      const errorMessage = serializeError(err);
-      await recordAttemptRow({
-        chainId: chain.id,
-        borrower: candidate.borrower,
-        status: 'error',
-        reason: errorMessage,
-        details: { candidate: candidateDetails, plan: planSnapshot, policy: policySnapshot },
-      });
+      await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'error', reason: (err as Error).message });
       if (!cfg.risk.dryRun) {
         const attempts = plansSentCount + plansErrorCount;
         const ratio = attempts > 0 ? plansErrorCount / attempts : 0;

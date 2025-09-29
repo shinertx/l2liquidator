@@ -8,17 +8,12 @@
     "lint": "eslint . --ext .ts",
     "feed:check": "ts-node --transpile-only offchain/tools/feed-check.ts",
     "quote:check": "ts-node --transpile-only offchain/tools/quote-check.ts",
-    "replay": "ts-node --transpile-only offchain/tools/replay-candidates.ts",
-    "agent:serve": "ts-node --transpile-only offchain/agent/api.ts",
-    "agent:run": "ts-node --transpile-only offchain/agent/runner.ts",
-    "agent:apply": "ts-node --transpile-only offchain/agent/apply_staged.ts"
+    "replay": "ts-node --transpile-only offchain/tools/replay-candidates.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
     "dotenv-expand": "^12.0.3",
-    "fastify": "^4.28.1",
     "ioredis": "^5.4.1",
-    "openai": "^4.55.6",
     "pg": "^8.12.0",
     "pino": "^9.2.0",
     "prom-client": "^15.1.1",
