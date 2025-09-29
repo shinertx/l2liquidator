@@ -11,6 +11,7 @@ forge install
 ```
 2) **Configure**
 - Copy `.env.sample` → `.env` and fill RPCs + private keys.
+- Add your The Graph Gateway key (`GRAPH_API_KEY`) and set any `AAVE_V3_SUBGRAPH_*` overrides in `.env` if you use hosted subgraphs.
 - Copy `config.example.yaml` → `config.yaml` and review markets.
 
 3) **Compile & test**
