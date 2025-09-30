@@ -2,7 +2,7 @@ import type { Address } from 'viem';
 import { AppConfig, ChainCfg } from '../infra/config';
 import { RouteOption } from '../simulator/router';
 
-const DEFAULT_UNI_FEES = [500, 3000, 10000];
+const DEFAULT_UNI_FEES = [100, 500, 3000, 10000];
 
 type RouteBuildResult = {
   options: RouteOption[];
@@ -13,80 +13,71 @@ type RouteBuildResult = {
 export function buildRouteOptions(
   cfg: AppConfig,
   chain: ChainCfg,
-  debtSymbol: string,
-  collateralSymbol: string
+  _debtSymbol: string,
+  _collateralSymbol: string
 ): RouteBuildResult {
-  const prefer = cfg.routing?.prefer?.[chain.id]?.[`${debtSymbol}-${collateralSymbol}`]
-    ?? cfg.routing?.prefer?.[chain.id]?.[`${collateralSymbol}-${debtSymbol}`];
-  const chainDex = cfg.dexRouters?.[chain.id];
-  const uniRouter = (chainDex?.uniV3 ?? chain.uniV3Router) as Address | undefined;
   const options: RouteOption[] = [];
-  const seenUni = new Set<number>();
-  let gapFee: number | undefined;
-  let gapRouter: Address | undefined;
+  const chainDex = cfg.dexRouters?.[chain.id];
 
-  const pushUni = (fee: number) => {
-    if (!uniRouter || !Number.isFinite(fee)) return;
-    if (seenUni.has(fee)) return;
-    seenUni.add(fee);
-    options.push({ type: 'UniV3', router: uniRouter, fee });
-    if (gapFee === undefined) {
-      gapFee = fee;
-      gapRouter = uniRouter;
+  if (!chainDex) {
+    // Fallback to default UniV3 if no dexRouters are configured for the chain
+    const uniRouter = chain.uniV3Router as Address | undefined;
+    if (uniRouter) {
+      for (const fee of DEFAULT_UNI_FEES) {
+        options.push({ type: 'UniV3', router: uniRouter, fee });
+      }
     }
-  };
+    return { options, gapFee: DEFAULT_UNI_FEES[1], gapRouter: uniRouter };
+  }
 
-  const pushUniDefaults = () => {
-    for (const fee of DEFAULT_UNI_FEES) pushUni(fee);
-  };
-
-  const pushCamelot = () => {
-    const router = chainDex?.camelotV2 as Address | undefined;
-    if (router) options.push({ type: 'UniV2', router });
-  };
-
-  const pushSolidly = (router?: string, factory?: string, stable = false) => {
-    if (!router || !factory) return;
-    options.push({ type: 'SolidlyV2', router: router as Address, factory: factory as Address, stable });
-  };
-
-  if (Array.isArray(prefer) && prefer.length) {
-    for (const raw of prefer) {
-      const entry = String(raw).trim();
-      const lower = entry.toLowerCase();
-      const uniMatch = /^univ3:(\d+)$/.exec(lower);
-      if (uniMatch) {
-        pushUni(Number(uniMatch[1]));
-        continue;
-      }
-      if (lower === 'univ3') {
-        pushUniDefaults();
-        continue;
-      }
-      if (lower.startsWith('camelot')) {
-        pushCamelot();
-        continue;
-      }
-      if (lower.startsWith('velodrome')) {
-        const stable = lower.includes(':stable');
-        pushSolidly(chainDex?.velodrome, chainDex?.velodromeFactory, stable);
-        continue;
-      }
-      if (lower.startsWith('aerodrome')) {
-        const stable = lower.includes(':stable');
-        pushSolidly(chainDex?.aerodrome, chainDex?.aerodromeFactory, stable);
-        continue;
-      }
+  // Uniswap V3
+  const uniV3Router = (chainDex.uniV3 ?? chain.uniV3Router) as Address | undefined;
+  if (uniV3Router) {
+    for (const fee of DEFAULT_UNI_FEES) {
+      options.push({ type: 'UniV3', router: uniV3Router, fee });
     }
   }
 
-  if (!options.length) {
-    pushUniDefaults();
+  // Camelot (Uniswap V2 fork)
+  if (chainDex.camelotV2) {
+    options.push({ type: 'UniV2', router: chainDex.camelotV2 as Address });
   }
 
-  if (gapRouter === undefined && uniRouter) {
-    gapRouter = uniRouter;
+  // Velodrome (Solidly V2 fork)
+  if (chainDex.velodrome && chainDex.velodromeFactory) {
+    options.push({
+      type: 'SolidlyV2',
+      router: chainDex.velodrome as Address,
+      factory: chainDex.velodromeFactory as Address,
+      stable: true,
+    });
+    options.push({
+      type: 'SolidlyV2',
+      router: chainDex.velodrome as Address,
+      factory: chainDex.velodromeFactory as Address,
+      stable: false,
+    });
   }
 
-  return { options, gapFee: gapFee ?? DEFAULT_UNI_FEES[0], gapRouter };
+  // Aerodrome (Solidly V2 fork)
+  if (chainDex.aerodrome && chainDex.aerodromeFactory) {
+    options.push({
+      type: 'SolidlyV2',
+      router: chainDex.aerodrome as Address,
+      factory: chainDex.aerodromeFactory as Address,
+      stable: true,
+    });
+    options.push({
+      type: 'SolidlyV2',
+      router: chainDex.aerodrome as Address,
+      factory: chainDex.aerodromeFactory as Address,
+      stable: false,
+    });
+  }
+  
+  // Determine a sensible default for price gap checking
+  const gapRouter = uniV3Router ?? (chainDex.camelotV2 as Address) ?? (chainDex.velodrome as Address);
+  const gapFee = DEFAULT_UNI_FEES[1]; // 500 bps is a common default
+
+  return { options, gapFee, gapRouter };
 }

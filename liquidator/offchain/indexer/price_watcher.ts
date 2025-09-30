@@ -4,7 +4,7 @@ import { bestRoute, RouteOption } from '../simulator/router';
 
 type RpcClient = PublicClient<Transport, Chain | undefined, any>;
 
-const ORACLE_TTL_MS = 15_000;
+const ORACLE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours – stablecoin feeds on L2 can stay flat for long stretches
 const ROUTE_TTL_MS = 5_000;
 
 type OracleObservation = {

@@ -70,18 +70,14 @@ risk:
   pnlPerGasMin: 2.5
   maxAttemptsPerBorrowerHour: 2
   dryRun: false
+  healthFactorMax: 0.98
+  maxRepayUsd: 100.0
+  maxLiveExecutions: 1
+  maxSessionNotionalUsd: 400.0
 
-routing:
-  prefer:
-    42161:
-      USDC-WETH: ["UniV3:500","Camelot"]
-    10:
-      USDC-WETH: ["UniV3:500","Velodrome"]
-    8453:
-      USDC-WETH: ["UniV3:500","Aerodrome"]
-    137:
-      USDC-WETH: ["UniV3:500"]
-  
+analysis:
+  openaiKey: ${OPENAI_API_KEY}
+
 dexRouters:
   42161:
     uniV3: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
@@ -105,36 +101,6 @@ dexRouters:
       WETH: "0x4200000000000000000000000000000000000006"
   137:
     uniV3: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
-    tokens:
-      USDC: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
-      WETH: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619"
-    8453:
-      USDC-WETH: ["UniV3:500","Aerodrome"]
-    137:
-      USDC-WETH: ["UniV3:500"]
-dexRouters:
-  42161:
-    uniV3: "0xe592427a0AEce92De3Edee1F18E0157C05861564"
-    camelotV2: "0xc873fEcbd354f5A56E00E710B90EF4201db2448d"
-    tokens:
-      USDC: "0xff970a61a04b1ca14834a43f5de4533ebddb5cc8"
-      WETH: "0x82Af49447D8a07e3Bd95BD0d56F35241523fBaB1"
-  10:
-    uniV3: "0xe592427a0AEce92De3Edee1F18E0157C05861564"
-    velodrome: "0xa062aE8A9c5e11aaA026fc2670B0D65cCc8B2858"
-    # velodromeFactory: "0x..."   # set to Velodrome V2 factory when known
-    tokens:
-      USDC: "0x0B2c639c533813f4aa9d7837cAf62653d097Ff85"
-      WETH: "0x4200000000000000000000000000000000000006"
-  8453:
-    uniV3: "0xe592427a0AEce92De3Edee1F18E0157C05861564"
-    aerodrome: "0xcF77A3bA9A5cA399B7c97C74D54e5B1bEb874e43"
-    # aerodromeFactory: "0x..."   # set to Aerodrome factory when known
-    tokens:
-      USDC: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
-      WETH: "0x4200000000000000000000000000000000000006"
-  137:
-    uniV3: "0xe592427a0AEce92De3Edee1F18E0157C05861564"
     tokens:
       USDC: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
       WETH: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619"

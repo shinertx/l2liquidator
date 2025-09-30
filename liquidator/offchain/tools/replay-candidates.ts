@@ -2,7 +2,8 @@
 import fs from 'fs';
 import path from 'path';
 import { createPublicClient, http } from 'viem';
-import { loadConfig, chainById } from '../infra/config';
+import { loadConfig, chainById, liquidatorForChain } from '../infra/config';
+import { executorAddressForChain } from '../infra/accounts';
 import { oraclePriceUsd } from '../indexer/price_watcher';
 import { simulate } from '../simulator/simulate';
 import { buildRouteOptions } from '../util/routes';
@@ -98,11 +99,31 @@ async function main() {
 
     const debtPriceUsd = (await oraclePriceUsd(client, debtToken)) ?? 1;
     const collPriceUsd = (await oraclePriceUsd(client, collateralToken)) ?? debtPriceUsd;
+    const contract = liquidatorForChain(cfg, chain.id);
+    if (!contract) {
+      console.warn('Missing liquidator address for chain', chain.id);
+      continue;
+    }
+    if (!cfg.beneficiary) {
+      console.warn('Missing beneficiary in config; cannot simulate payout target');
+      continue;
+    }
+
+    const executor = executorAddressForChain(chain);
+    if (!executor) {
+      console.warn('Missing executor address for chain', chain.id);
+      continue;
+    }
+
     const { options } = buildRouteOptions(cfg, chain, candidate.debt.symbol, candidate.collateral.symbol);
 
     const plan = await simulate({
       client,
       chain,
+      contract,
+      beneficiary: cfg.beneficiary,
+      executor,
+  borrower: candidate.borrower,
       debt: { ...debtToken, symbol: candidate.debt.symbol, amount: toBigInt(candidate.debt.amount) },
       collateral: { ...collateralToken, symbol: candidate.collateral.symbol, amount: toBigInt(candidate.collateral.amount) },
       closeFactor: (market.closeFactorBps ?? 5000) / 10_000,

@@ -1,5 +1,6 @@
 import { Address, createPublicClient, http, getAddress } from 'viem';
 import type { AppConfig } from './config';
+import { instrument } from './instrument';
 
 const PROVIDER_ABI = [
   {
@@ -12,10 +13,12 @@ const PROVIDER_ABI = [
 ] as const;
 
 export async function getPoolFromProvider(rpc: string, provider: Address): Promise<Address> {
-  const client = createPublicClient({ transport: http(rpc) });
-  const normalized = getAddress(provider);
-  const pool = await client.readContract({ abi: PROVIDER_ABI, address: normalized, functionName: 'getPool' });
-  return pool as Address;
+  return instrument('rpc', 'getPoolFromProvider', async () => {
+    const client = createPublicClient({ transport: http(rpc) });
+    const normalized = getAddress(provider);
+    const pool = await client.readContract({ abi: PROVIDER_ABI, address: normalized, functionName: 'getPool' });
+    return pool as Address;
+  });
 }
 
 export async function logPoolsAtBoot(cfg: AppConfig): Promise<void> {

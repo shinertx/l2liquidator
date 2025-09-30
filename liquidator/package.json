@@ -9,12 +9,15 @@
     "feed:check": "ts-node --transpile-only offchain/tools/feed-check.ts",
     "quote:check": "ts-node --transpile-only offchain/tools/quote-check.ts",
     "replay": "ts-node --transpile-only offchain/tools/replay-candidates.ts",
-    "subgraph:check": "ts-node --transpile-only offchain/tools/subgraph_check.ts"
+    "subgraph:check": "ts-node --transpile-only offchain/tools/subgraph_check.ts",
+    "preflight": "ts-node --transpile-only offchain/tools/preflight.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
     "dotenv-expand": "^12.0.3",
+    "fastify": "^4.28.1",
     "ioredis": "^5.4.1",
+    "openai": "^4.57.0",
     "pg": "^8.12.0",
     "pino": "^9.2.0",
     "prom-client": "^15.1.1",
@@ -25,7 +28,11 @@
   "devDependencies": {
     "@types/node": "^20.14.10",
     "@types/pg": "^8.10.2",
+    "@typescript-eslint/eslint-plugin": "^8.45.0",
+    "@typescript-eslint/parser": "^8.45.0",
+    "eslint": "^9.36.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.6.2"
+    "typescript": "^5.6.2",
+    "typescript-eslint": "^8.45.0"
   }
 }

@@ -12,7 +12,7 @@ const CANDIDATES = [
 
 for (const p of CANDIDATES) {
   if (fs.existsSync(p)) {
-    const result = dotenv.config({ path: p });
+  const result = dotenv.config({ path: p, override: true });
     dotenvExpand.expand(result as any);
     break;
   }

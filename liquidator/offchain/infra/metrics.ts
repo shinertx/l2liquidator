@@ -10,6 +10,21 @@ export const gauge = {
 registry.registerMetric(gauge.pnlPerGas);
 registry.registerMetric(gauge.hitRate);
 
+export const histogram = {
+  dbQueryDuration: new client.Histogram({
+    name: 'db_query_duration_seconds',
+    help: 'Duration of database queries in seconds',
+    labelNames: ['operation', 'status'],
+  }),
+  rpcCallDuration: new client.Histogram({
+    name: 'rpc_call_duration_seconds',
+    help: 'Duration of RPC calls in seconds',
+    labelNames: ['operation', 'status'],
+  }),
+};
+registry.registerMetric(histogram.dbQueryDuration);
+registry.registerMetric(histogram.rpcCallDuration);
+
 export const counter = {
   candidates: new client.Counter({ name: 'candidates_total', help: 'Total liquidation candidates processed' }),
   throttled: new client.Counter({ name: 'candidates_throttled_total', help: 'Candidates skipped due to throttle window' }),
@@ -18,5 +33,7 @@ export const counter = {
   plansDryRun: new client.Counter({ name: 'plans_dry_run_total', help: 'Plans recorded in dry-run mode' }),
   plansSent: new client.Counter({ name: 'plans_sent_total', help: 'Transactions submitted on-chain' }),
   plansError: new client.Counter({ name: 'plans_error_total', help: 'Errors while processing candidate' }),
+  dbErrors: new client.Counter({ name: 'db_errors_total', help: 'Total database errors' }),
+  rpcErrors: new client.Counter({ name: 'rpc_errors_total', help: 'Total RPC errors' }),
 };
 Object.values(counter).forEach((metric) => registry.registerMetric(metric));

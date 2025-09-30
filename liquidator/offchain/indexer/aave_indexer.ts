@@ -1,6 +1,7 @@
 // Aave v3 subgraph driven candidate discovery for near-liquidation accounts
 import { log } from '../infra/logger';
 import { AppConfig, Market, chainById, ChainCfg, TokenInfo } from '../infra/config';
+import { emitAlert } from '../infra/alerts';
 
 export type Candidate = {
   borrower: `0x${string}`;
@@ -10,66 +11,102 @@ export type Candidate = {
   healthFactor: number;
 };
 
-// Subgraph endpoints (configurable via env vars to allow alternative indexers or hosted mirrors)
-const SUBGRAPH_URL: Record<number, string> = {
-  42161: process.env.AAVE_V3_SUBGRAPH_ARB || 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-arbitrum',
-  10: process.env.AAVE_V3_SUBGRAPH_OP || 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-optimism',
-  8453: process.env.AAVE_V3_SUBGRAPH_BASE || '',
-  // The legacy Polygon endpoint has been removed; require an explicit env override (e.g., Gateway/Messari mirror)
-  137: process.env.AAVE_V3_SUBGRAPH_POLYGON || '',
+const SUBGRAPH_ENV_KEYS: Record<number, string> = {
+  42161: 'AAVE_V3_SUBGRAPH_ARB',
+  10: 'AAVE_V3_SUBGRAPH_OP',
+  8453: 'AAVE_V3_SUBGRAPH_BASE',
+  137: 'AAVE_V3_SUBGRAPH_POLYGON',
 };
 
-// Messari-standardized Aave subgraph schema: fetch positions separately for debt (BORROWER) and collateral
-const QUERY_BORROWER = `
-  query BorrowerPositions($first: Int!, $debt: Bytes!) {
-    positions(
+const SUBGRAPH_IDS: Record<number, string> = {
+  42161: 'DLuE98kEb5pQNXAcKFQGQgfSQ57Xdou4jnVbAEqMfy3B',
+  10: 'DSfLz8oQBUeU5atALgUFQKMTSYV9mZAVYp4noLSXAfvb',
+  8453: 'GQFbb95cE6d8mV989mL5figjaGaKCQB3xqYrr1bRyXqF',
+  137: 'Co2URyXjnxaw8WqxKyVHdirq9Ahhm5vcTs4dMedAq211',
+};
+
+const FALLBACK_SUBGRAPH_URL: Record<number, string> = {
+  42161: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-arbitrum',
+  10: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-optimism',
+  8453: '',
+  137: '',
+};
+
+function buildSubgraphUrl(chainId: number): string {
+  const envKey = SUBGRAPH_ENV_KEYS[chainId];
+  const override = envKey ? process.env[envKey] : undefined;
+  if (override && !override.includes('MISSING')) return override;
+  const apiKey = process.env.GRAPH_API_KEY?.trim();
+  const id = SUBGRAPH_IDS[chainId];
+  if (apiKey && id) {
+    return `https://gateway.thegraph.com/api/${apiKey}/subgraphs/id/${id}`;
+  }
+  return FALLBACK_SUBGRAPH_URL[chainId] ?? '';
+}
+
+// Query for reserves tied to users with health factor below a certain threshold.
+const QUERY_USER_RESERVES_BY_HF = `
+  query GetUserReservesByHealthFactor($first: Int!, $lt: BigDecimal!, $minBorrowUsd: BigDecimal!) {
+    userReserves(
       first: $first,
-      orderBy: balance,
-      orderDirection: desc,
-      where: { side: BORROWER, asset_: { id: $debt } }
+      orderBy: user__healthFactor,
+      orderDirection: asc,
+      where: {
+        user_: {
+          healthFactor_lt: $lt,
+          totalBorrowsUSD_gt: $minBorrowUsd
+        }
+      }
     ) {
-      id
-      balance
-      account { id }
-      asset { id symbol decimals }
-      market { id }
+      user {
+        id
+        healthFactor
+      }
+      reserve {
+        id
+        symbol
+        decimals
+        underlyingAsset
+      }
+      usageAsCollateralEnabledOnUser
+      currentTotalDebt
+      currentATokenBalance
     }
   }
 `;
 
-const QUERY_COLLATERAL = `
-  query CollateralPositions($first: Int!, $coll: Bytes!) {
-    positions(
-      first: $first,
-      orderBy: balance,
-      orderDirection: desc,
-      where: { side: COLLATERAL, asset_: { id: $coll } }
-    ) {
-      id
-      balance
-      account { id }
-      asset { id symbol decimals }
-      market { id }
-    }
-  }
-`;
-
-type GraphPosition = {
-  id: string;
-  balance: string; // BigInt string
-  account: { id: string };
-  asset: { id: string; symbol: string; decimals: number };
-  market: { id: string };
+type SubgraphUserReserve = {
+  user: {
+    id: string;
+    healthFactor?: string;
+  };
+  reserve: {
+    id: string;
+    symbol: string;
+    decimals: number;
+    underlyingAsset?: string;
+  };
+  usageAsCollateralEnabledOnUser: boolean;
+  currentTotalDebt?: string;
+  currentATokenBalance?: string;
 };
 
 const POLL_MS = 20_000;
-const HF_THRESHOLD = 1.03;
+const HF_THRESHOLD = '1.1'; // "Watch zone" - accounts with HF < 1.1
+const MIN_BORROW_USD = '10';
 const DEDUPE_MS = 5 * 60 * 1000;
+const AUTH_ERROR_REGEX = /(payment required|auth error|unauthorized|invalid api key|does not exist)/i;
+const AUTH_ALERT_COOLDOWN_MS = 10 * 60 * 1000;
+const lastAuthAlert = new Map<string, number>();
 
 async function graphFetch<T = any>(url: string, query: string, variables: Record<string, any>): Promise<T> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  const apiKey = process.env.GRAPH_API_KEY?.trim();
+  if (apiKey) headers.authorization = `Bearer ${apiKey}`;
+
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers,
     body: JSON.stringify({
       query,
       variables,
@@ -90,53 +127,90 @@ async function graphFetch<T = any>(url: string, query: string, variables: Record
 
 function parseHealthFactor(raw: string): number {
   const numeric = Number(raw);
-  if (Number.isNaN(numeric)) return 0;
-  if (numeric > 1000) {
-    return numeric / 1e18;
-  }
-  return numeric;
+  return Number.isNaN(numeric) ? 0 : numeric;
 }
 
-function applyIndexAmount(value: string, index: string): number {
-  const scaled = Number(value);
-  const idx = Number(index);
-  if (!Number.isFinite(scaled) || !Number.isFinite(idx)) return 0;
-  const ray = idx / 1e27;
-  return scaled * ray;
-}
-
-// Helper to parse BigInt string safely
 function parseBigIntOrZero(v: string | undefined): bigint {
-  try { return v ? BigInt(v) : 0n; } catch { return 0n; }
+  try {
+    return v ? BigInt(v) : 0n;
+  } catch {
+    return 0n;
+  }
 }
 
-function toTokenAmount(amount: number, decimals: number): bigint {
-  if (!Number.isFinite(amount) || amount <= 0) return 0n;
-  const scaled = Math.floor(amount * 10 ** decimals);
-  return BigInt(scaled);
+type UserReserveBucket = {
+  healthFactor: number;
+  reserves: SubgraphUserReserve[];
+};
+
+function normalizeAddress(addr: string | undefined): `0x${string}` | null {
+  if (!addr) return null;
+  if (addr.startsWith('0x') && addr.length === 42) {
+    return addr.toLowerCase() as `0x${string}`;
+  }
+  const parts = addr.split('-');
+  const candidate = parts[parts.length - 1];
+  if (candidate?.startsWith('0x') && candidate.length === 42) {
+    return candidate.toLowerCase() as `0x${string}`;
+  }
+  return null;
 }
 
-function buildCandidateFromPositions(
-  account: string,
-  market: Market,
-  chain: ChainCfg,
-  debtToken: TokenInfo,
-  collToken: TokenInfo,
-  debtPos: GraphPosition,
-  collPos: GraphPosition
-): Candidate | null {
-  const debtAmount = parseBigIntOrZero(debtPos.balance);
-  const collateralAmount = parseBigIntOrZero(collPos.balance);
-  if (debtAmount === 0n || collateralAmount === 0n) return null;
+function groupUserReserves(reserves: SubgraphUserReserve[]): Map<string, UserReserveBucket> {
+  const grouped = new Map<string, UserReserveBucket>();
+  for (const reserve of reserves) {
+    const userId = reserve.user?.id;
+    if (!userId?.startsWith('0x')) continue;
+    const hf = parseHealthFactor(reserve.user.healthFactor ?? '0');
+    if (hf <= 0) continue;
+    if (!grouped.has(userId)) {
+      grouped.set(userId, { healthFactor: hf, reserves: [] });
+    }
+    const bucket = grouped.get(userId)!;
+    if (hf < bucket.healthFactor) {
+      bucket.healthFactor = hf;
+    }
+    bucket.reserves.push(reserve);
+  }
+  return grouped;
+}
 
-  return {
-    borrower: account as `0x${string}`,
-    chainId: market.chainId,
-    debt: { symbol: market.debtAsset, address: debtToken.address, decimals: debtToken.decimals, amount: debtAmount },
-    collateral: { symbol: market.collateralAsset, address: collToken.address, decimals: collToken.decimals, amount: collateralAmount },
-    // healthFactor not provided by this schema; set >0 as placeholder, simulate() will enforce risk
-    healthFactor: 0.99,
-  };
+function buildCandidatesFromBucket(userId: string, chainId: number, bucket: UserReserveBucket): Candidate[] {
+  const debts: Candidate['debt'][] = [];
+  const collaterals: Candidate['collateral'][] = [];
+
+  for (const reserve of bucket.reserves) {
+    const address = normalizeAddress(reserve.reserve.underlyingAsset ?? reserve.reserve.id);
+    if (!address) continue;
+    const decimalsRaw = reserve.reserve.decimals;
+    const decimals = typeof decimalsRaw === 'number' ? decimalsRaw : Number(decimalsRaw ?? 0);
+    const symbol = reserve.reserve.symbol;
+
+    const debtAmount = parseBigIntOrZero(reserve.currentTotalDebt);
+    if (debtAmount > 0n) {
+      debts.push({ symbol, address, decimals, amount: debtAmount });
+    }
+
+    const collateralAmount = parseBigIntOrZero(reserve.currentATokenBalance);
+    if (reserve.usageAsCollateralEnabledOnUser && collateralAmount > 0n) {
+      collaterals.push({ symbol, address, decimals, amount: collateralAmount });
+    }
+  }
+
+  const out: Candidate[] = [];
+  for (const debt of debts) {
+    for (const collateral of collaterals) {
+      if (debt.address === collateral.address) continue;
+      out.push({
+        borrower: userId as `0x${string}`,
+        chainId,
+        healthFactor: bucket.healthFactor,
+        debt,
+        collateral,
+      });
+    }
+  }
+  return out;
 }
 
 function delay(ms: number) {
@@ -145,62 +219,52 @@ function delay(ms: number) {
 
 export async function* streamCandidates(cfg: AppConfig): AsyncGenerator<Candidate> {
   const dedupe = new Map<string, number>();
-
   while (true) {
-    for (const market of cfg.markets.filter((m) => m.enabled)) {
-      const chain = chainById(cfg, market.chainId);
-      if (!chain || !chain.enabled) continue;
-
-  const subgraph = SUBGRAPH_URL[market.chainId];
-      if (!subgraph) {
-        log.warn({ chainId: market.chainId }, 'missing-subgraph-url');
-        continue;
-      }
-
-      const debtToken = chain.tokens[market.debtAsset];
-      const collToken = chain.tokens[market.collateralAsset];
-      if (!debtToken || !collToken) {
-        log.warn({ market }, 'unknown-token');
-        continue;
-      }
+    for (const chain of cfg.chains.filter((c) => c.enabled)) {
+      const subgraph = buildSubgraphUrl(chain.id);
+      if (!subgraph) continue;
 
       try {
         const t0 = Date.now();
-        // Fetch top borrowers in the debt asset and top collateral holders in the coll asset
-        const [borrowersRes, collRes] = await Promise.all([
-          graphFetch<{ positions: GraphPosition[] }>(subgraph, QUERY_BORROWER, { first: 200, debt: debtToken.address.toLowerCase() }),
-          graphFetch<{ positions: GraphPosition[] }>(subgraph, QUERY_COLLATERAL, { first: 200, coll: collToken.address.toLowerCase() }),
-        ]);
-        const borrowers = borrowersRes?.positions ?? [];
-        const collaters = collRes?.positions ?? [];
+        const response = await graphFetch<{ userReserves: SubgraphUserReserve[] }>(subgraph, QUERY_USER_RESERVES_BY_HF, {
+          first: 500,
+          lt: HF_THRESHOLD,
+          minBorrowUsd: MIN_BORROW_USD,
+        });
+        const reserves = response?.userReserves ?? [];
         const dt = Date.now() - t0;
-        log.debug({ chainId: chain.id, debt: market.debtAsset, coll: market.collateralAsset, borrowers: borrowers.length, collaters: collaters.length, ms: dt, subgraph }, 'subgraph-poll');
+        log.debug({ chainId: chain.id, userReserves: reserves.length, ms: dt, subgraph }, 'subgraph-poll-hf');
 
-        // Index collateral positions by account
-        const collByAcct = new Map<string, GraphPosition>();
-        for (const c of collaters) collByAcct.set(c.account.id.toLowerCase(), c);
-
-        // For each borrower, see if they have matching collateral
-        let yielded = 0;
-        for (const b of borrowers) {
-          const acct = b.account.id.toLowerCase();
-          const c = collByAcct.get(acct);
-          if (!c) continue;
-          const candidate = buildCandidateFromPositions(acct, market, chain, debtToken, collToken, b, c);
-          if (!candidate) continue;
-
-          const key = `${candidate.chainId}:${candidate.borrower}:${candidate.debt.address}:${candidate.collateral.address}`;
-          const now = Date.now();
-          const last = dedupe.get(key) ?? 0;
-          if (now - last < DEDUPE_MS) continue;
-          dedupe.set(key, now);
-          yield candidate;
-          yielded += 1;
-          if (yielded >= 50) break; // backpressure
+        const grouped = groupUserReserves(reserves);
+        for (const [userId, bucket] of grouped.entries()) {
+          const candidates = buildCandidatesFromBucket(userId, chain.id, bucket);
+          for (const candidate of candidates) {
+            // Deduplicate candidates to avoid processing the same one too frequently
+            const key = `${candidate.chainId}:${candidate.borrower}:${candidate.debt.address}:${candidate.collateral.address}`;
+            const now = Date.now();
+            const last = dedupe.get(key) ?? 0;
+            if (now - last < DEDUPE_MS) continue;
+            dedupe.set(key, now);
+            yield candidate;
+          }
         }
       } catch (err) {
-        // Downgrade to level 30 after repeated failures could be added; keep warn for visibility
-        log.warn({ err: String(err), chainId: market.chainId, subgraph }, 'aave-indexer-failed');
+        const message = err instanceof Error ? err.message : String(err);
+        log.warn({ err: message, chainId: chain.id, subgraph }, 'aave-indexer-failed');
+
+        if (AUTH_ERROR_REGEX.test(message)) {
+          const key = `${chain.id}:${subgraph}`;
+          const now = Date.now();
+          const last = lastAuthAlert.get(key) ?? 0;
+          if (now - last >= AUTH_ALERT_COOLDOWN_MS) {
+            lastAuthAlert.set(key, now);
+            await emitAlert(
+              'Aave subgraph auth error',
+              { chainId: chain.id, subgraph, message },
+              'critical'
+            );
+          }
+        }
       }
     }
 

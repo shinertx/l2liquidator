@@ -40,9 +40,14 @@ npm run dev
 
 **Not legal/financial advice. Use at your own risk.**
 
+### Persistent observability
+- **File logs**: Runtime logs now mirror to `logs/live.log`. Override with `LOG_DIR`, `LOG_FILE_NAME`, or disable stdout mirroring with `LOG_DISABLE_STDOUT=1`. Rotate/ship this file with your preferred tooling.
+- **Attempt store (optional)**: Set `DATABASE_URL` to a Postgres connection string before starting the orchestrator to persist policy skips, dry-runs, and failures. The table is auto-provisioned via `ensureAttemptTable()` on boot.
+
 ### Live ops checklist
 - **Config**: set `beneficiary` to your Safe, populate `contracts.liquidator[chainId]` after deployment, and verify token/pool/router addresses against Aave & Uniswap docs.
 - **Safety**: keep `risk.dryRun: true` for 12–24h canary to observe `would-fire` logs and price gaps before flipping to live.
+- **Micro-live guardrails**: before disabling dry-run, set conservative `risk.maxRepayUsd` (per liquidation), `risk.maxSessionNotionalUsd` (rolling session spend), and `risk.maxLiveExecutions` (per process) to cap exposure during canary runs; the orchestrator will exit once any cap is hit.
 - **Keys & funding**: export low-balance EOAs via `.env`, fund gas (ARB/OP) just-in-time, sweep proceeds to the Safe frequently.
 - **Deployment**: `forge create` with the chain-specific pool/router above and your beneficiary, then record the address back into `config.yaml`.
 - **Monitoring**: watch Prometheus gauges (`pnl_per_gas`, `hit_rate`), log-level `debug` for gap skips, and track failed tx hashes for revert reasons.

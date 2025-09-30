@@ -11,16 +11,16 @@ chains:
     rpc: ${RPC_ARB}
     privtx: ${PRIVTX_ARB}
     aaveProvider: "0xa97684EaD0E402dC232d5A977953DF7ECBaB3CDb"
-    uniV3Router: "0xe592427a0aece92de3edee1f18e0157c05861564"
-    quoter: "0x61ffe014ba17989e743c5f6cb21bf9697530b21e"
+    uniV3Router: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+    quoter: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e"
     enabled: true
     tokens:
       USDC:
-        address: "0xaf88d065e77c8cC2239327c5EdB3A432268e5831"
+        address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
         decimals: 6
         chainlinkFeed: "0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3"
       WETH:
-        address: "0x82af49447d8a07e3bd95bd0d56f35241523fbab1"
+        address: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
         decimals: 18
         chainlinkFeed: "0x639fe6ab55c921f74e7fac1ee960c0b6293ba612"
 
@@ -29,18 +29,18 @@ chains:
     rpc: ${RPC_OP}
     privtx: ${PRIVTX_OP}
     aaveProvider: "0xa97684EaD0E402dC232d5A977953DF7ECBaB3CDb"
-    uniV3Router: "0xe592427a0aece92de3edee1f18e0157c05861564"
-    quoter: "0x61ffe014ba17989e743c5f6cb21bf9697530b21e"
+    uniV3Router: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+    quoter: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e"
     enabled: true
     tokens:
       USDC:
-        address: "0x0B2c639c533813f4aa9d7837cAf62653d097Ff85"
+        address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"
         decimals: 6
-        chainlinkFeed: ""
+        chainlinkFeed: "0x7f99817d87baD03ea21E05112Ca799d715730efe"
       WETH:
         address: "0x4200000000000000000000000000000000000006"
         decimals: 18
-        chainlinkFeed: ""
+        chainlinkFeed: "0x13e3ee699d1909e989722e753853ae30b17e08c5"
 
   - id: 8453
     name: base
@@ -80,11 +80,11 @@ chains:
 
 assets:
   USDC:
-    floorBps: 60
+    floorBps: 30
     gapCapBps: 50
-    slippageBps: 25
+    slippageBps: 50
   WETH:
-    floorBps: 60
+    floorBps: 30
     gapCapBps: 60
     slippageBps: 30
 
@@ -111,7 +111,7 @@ markets:
     collateralAsset: WETH
     closeFactorBps: 5000
     bonusBps: 800
-    enabled: false
+    enabled: true
 
   - protocol: aavev3
     chainId: 137
@@ -126,7 +126,11 @@ risk:
   failRateCap: 0.25
   pnlPerGasMin: 2.5
   maxAttemptsPerBorrowerHour: 1
-  dryRun: true
+  dryRun: false
+  healthFactorMax: 0.96
+  maxRepayUsd: 20
+  maxLiveExecutions: 2
+  maxSessionNotionalUsd: 45
 
 routing:
   prefer:
@@ -141,17 +145,18 @@ routing:
 
 dexRouters:
   42161:
-    uniV3: "0xe592427a0AEce92De3Edee1F18E0157C05861564"
+    uniV3: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
     camelotV2: "0xc873fEcbd354f5A56E00E710B90EF4201db2448d"
     tokens:
-      USDC: "0xaf88d065e77c8cC2239327c5EdB3A432268e5831"
-      WETH: "0x82Af49447D8a07e3Bd95BD0d56F35241523fBaB1"
+      USDC: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+      WETH: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
 
   10:
-    uniV3: "0xe592427a0AEce92De3Edee1F18E0157C05861564"
+    uniV3: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
     velodrome: "0xa062aE8A9c5e11aaA026fc2670B0D65cCc8B2858"
+    velodromeFactory: "0xF1046053aa5682b4F9a81b5481394DA16BE5FF5a"
     tokens:
-      USDC: "0x0B2c639c533813f4aa9d7837cAf62653d097Ff85"
+      USDC: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"
       WETH: "0x4200000000000000000000000000000000000006"
 
   8453:

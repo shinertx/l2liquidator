@@ -1,5 +1,5 @@
 import '../infra/env';
-import fastify from 'fastify';
+import fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { createPublicClient, http } from 'viem';
 import { Address, getAddress } from 'viem';
 
@@ -12,7 +12,7 @@ import { buildRouteOptions } from '../util/routes';
 import { bestRoute } from '../simulator/router';
 import { oraclePriceDetails } from '../indexer/price_watcher';
 
-const app = fastify({ logger: false });
+const app: FastifyInstance = fastify({ logger: false });
 type AttemptRow = {
   id: number;
   chain_id: number;
@@ -65,7 +65,7 @@ async function fetchAttempts(limit = 100, seconds?: number) {
 
 app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
-app.get('/attempts', async (req, reply) => {
+app.get('/attempts', async (req: FastifyRequest, reply: FastifyReply) => {
   try {
     const query = req.query as any;
     const limit = getLimit(query ?? {}, 200);
@@ -78,7 +78,7 @@ app.get('/attempts', async (req, reply) => {
   }
 });
 
-app.get('/metrics', async (req, reply) => {
+app.get('/metrics', async (req: FastifyRequest, reply: FastifyReply) => {
   try {
     const query = req.query as any;
     const limit = getLimit(query ?? {}, 500);
@@ -130,7 +130,7 @@ function decimalToBigInt(value: string, decimals: number): bigint {
   return intBig * scale + fracBig;
 }
 
-app.get('/quotes', async (req, reply) => {
+app.get('/quotes', async (req: FastifyRequest, reply: FastifyReply) => {
   const query = req.query as any;
   const cfg = loadConfig();
   const chainId = Number(query.chain ?? query.chainId ?? cfg.chains[0]?.id);
@@ -212,7 +212,7 @@ app.get('/quotes', async (req, reply) => {
   };
 });
 
-app.get('/oracles', async (req, reply) => {
+app.get('/oracles', async (req: FastifyRequest, reply: FastifyReply) => {
   const query = req.query as any;
   const cfg = loadConfig();
   const chainId = Number(query.chain ?? query.chainId ?? cfg.chains[0]?.id);
@@ -230,7 +230,7 @@ app.get('/oracles', async (req, reply) => {
   return { chainId, results };
 });
 
-app.post('/propose', async (req, reply) => {
+app.post('/propose', async (req: FastifyRequest, reply: FastifyReply) => {
   try {
     const body = req.body as any;
     if (!body?.patch) {

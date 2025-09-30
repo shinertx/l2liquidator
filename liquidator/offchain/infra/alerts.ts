@@ -32,15 +32,16 @@ export async function sendSlackAlert(title: string, details: Record<string, unkn
   });
 }
 
-export async function sendPagerDutyAlert(title: string, details: Record<string, unknown>) {
+export async function sendPagerDutyAlert(title: string, details: Record<string, unknown>, level: AlertLevel = 'warn') {
   if (!pagerDutyKey) return;
+  const severity = level === 'warn' ? 'warning' : level;
   await postJson('https://events.pagerduty.com/v2/enqueue', {
     routing_key: pagerDutyKey,
     event_action: 'trigger',
     payload: {
       summary: title,
       source: 'l2-liquidator',
-      severity: 'warning',
+      severity,
       custom_details: details,
     },
   });
@@ -48,8 +49,10 @@ export async function sendPagerDutyAlert(title: string, details: Record<string, 
 
 export async function emitAlert(title: string, details: Record<string, unknown>, level: AlertLevel = 'warn') {
   log.warn({ title, details, level }, 'alert');
-  await Promise.all([
-    sendSlackAlert(title, details, level),
-    sendPagerDutyAlert(title, details),
-  ]);
+
+  const alerts = [sendSlackAlert(title, details, level)];
+  if (level === 'critical') {
+    alerts.push(sendPagerDutyAlert(title, details, level));
+  }
+  await Promise.all(alerts);
 }

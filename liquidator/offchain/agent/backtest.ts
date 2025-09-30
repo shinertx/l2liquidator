@@ -1,7 +1,8 @@
 import '../infra/env';
 import { createPublicClient, http } from 'viem';
 
-import { loadConfig, chainById, AppConfig, Market } from '../infra/config';
+import { loadConfig, chainById, AppConfig, Market, liquidatorForChain } from '../infra/config';
+import { executorAddressForChain } from '../infra/accounts';
 import { log } from '../infra/logger';
 import { db } from '../infra/db';
 import { buildRouteOptions } from '../util/routes';
@@ -161,10 +162,33 @@ export async function runBacktest(options: BacktestOptions = {}): Promise<Backte
     const collPrice =
       candidate.collateralPriceUsd ?? (await oraclePriceUsd(client, collateralToken)) ?? debtPrice;
 
+    const contract = liquidatorForChain(config, candidate.chainId);
+    if (!contract) {
+      skipped += 1;
+      failures.push({ borrower: candidate.borrower, chainId: candidate.chainId, reason: 'missing-contract' });
+      continue;
+    }
+    if (!config.beneficiary) {
+      skipped += 1;
+      failures.push({ borrower: candidate.borrower, chainId: candidate.chainId, reason: 'missing-beneficiary' });
+      continue;
+    }
+
+    const executor = executorAddressForChain(chain);
+    if (!executor) {
+      skipped += 1;
+      failures.push({ borrower: candidate.borrower, chainId: candidate.chainId, reason: 'missing-executor' });
+      continue;
+    }
+
     const routes = buildRouteOptions(config, chain, candidate.debt.symbol, candidate.collateral.symbol).options;
     const plan = await simulate({
       client,
       chain,
+      contract,
+      beneficiary: config.beneficiary,
+      executor,
+      borrower: candidate.borrower,
       debt: {
         ...debtToken,
         symbol: candidate.debt.symbol,
