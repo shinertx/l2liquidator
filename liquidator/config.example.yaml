@@ -65,16 +65,22 @@ markets:
     enabled: false
 
 risk:
-  gasCapUsd: 2.0
+  gasCapUsd: 8.0
   failRateCap: 0.25
   pnlPerGasMin: 2.5
-  maxAttemptsPerBorrowerHour: 2
+  maxAttemptsPerBorrowerHour: 6
   dryRun: false
-  healthFactorMax: 0.98
-  maxRepayUsd: 100.0
-  maxLiveExecutions: 1
-  maxSessionNotionalUsd: 400.0
+  healthFactorMax: 0.96
+  maxRepayUsd: 500.0
+  maxLiveExecutions: 50
+  maxSessionNotionalUsd: 2000.0
   denyAssets: []
+
+indexer:
+  subgraphFirst: 1000
+  dedupeMs: 60000
+  pollMs: 200
+  hfThreshold: 1.05
 
 analysis:
   openaiKey: ${OPENAI_API_KEY}

@@ -44,7 +44,8 @@ export async function sendLiquidation(
   planArgs: Parameters<typeof encodePlan>[0],
   privateRpc?: string,
 ) {
-  const w = wallet(chainRpc, pk, privateRpc);
+  const writeRpc = privateRpc ?? chainRpc;
+  const w = wallet(writeRpc, pk);
   const pub = createPublicClient({ transport: http(chainRpc) });
 
   const data = {

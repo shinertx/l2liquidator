@@ -30,7 +30,7 @@ export async function checkSequencerStatus(params: {
   staleAfterSeconds?: number;
   recoveryGraceSeconds?: number;
 }): Promise<SequencerStatus> {
-  const { rpcUrl, feed, staleAfterSeconds = 120, recoveryGraceSeconds = 60 } = params;
+  const { rpcUrl, feed, staleAfterSeconds = 120, recoveryGraceSeconds } = params;
   if (!feed) {
     return { ok: true };
   }
@@ -48,20 +48,28 @@ export async function checkSequencerStatus(params: {
       functionName: 'latestRoundData',
     });
 
-    const status = Number(answer);
+    const isUp = answer === 1n;
+    if (!isUp) {
+      return { ok: false, reason: 'status-down', updatedAt: Number(updatedAt) };
+    }
+
     const updated = Number(updatedAt);
     const now = Math.floor(Date.now() / 1000);
-
-    if (status !== 0) {
-      return { ok: false, reason: `status ${status}`, updatedAt: updated };
+    if (!Number.isFinite(updated) || updated === 0) {
+      return { ok: false, reason: 'updated-zero' };
     }
 
     const age = now - updated;
+
     if (age > staleAfterSeconds) {
       return { ok: false, reason: `stale ${age}s`, updatedAt: updated };
     }
 
-    if (age < recoveryGraceSeconds) {
+    const envGraceRaw = process.env.SEQUENCER_GRACE_SECS;
+    const envGrace = envGraceRaw ? Number(envGraceRaw) : NaN;
+    const graceSeconds = Number.isFinite(envGrace) ? envGrace : recoveryGraceSeconds ?? 120;
+
+    if (age < graceSeconds) {
       return { ok: false, reason: `grace ${age}s`, updatedAt: updated };
     }
 

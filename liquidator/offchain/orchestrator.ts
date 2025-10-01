@@ -1,12 +1,13 @@
 import './infra/env';
+import './infra/metrics_server';
 import { Address, createPublicClient, http } from 'viem';
-import { loadConfig, chainById, liquidatorForChain, ChainCfg, AppConfig } from './infra/config';
+import { loadConfig, liquidatorForChain, ChainCfg, AppConfig } from './infra/config';
 import { executorAddressForChain, privateKeyForChain } from './infra/accounts';
 import { log } from './infra/logger';
 import { counter, gauge } from './infra/metrics';
 import { isThrottled, recordAttempt as recordThrottleAttempt } from './infra/throttle';
 import { ensureAttemptTable, recordAttemptRow } from './infra/attempts';
-import { streamCandidates } from './indexer/aave_indexer';
+import { streamCandidates, type Candidate } from './indexer/aave_indexer';
 import { oracleDexGapBps, oraclePriceUsd } from './indexer/price_watcher';
 import { simulate } from './simulator/simulate';
 import { sendLiquidation } from './executor/send_tx';
@@ -14,12 +15,13 @@ import { getPoolFromProvider, logPoolsAtBoot } from './infra/aave_provider';
 import { buildRouteOptions } from './util/routes';
 import { emitAlert } from './infra/alerts';
 import { checkSequencerStatus } from './infra/sequencer';
+import { createChainWatcher } from './realtime/watchers';
 
 const DEFAULT_CLOSE_FACTOR_BPS = 5000;
 const DEFAULT_BONUS_BPS = 800;
-const RAY = 10n ** 27n;
+const WAD = 10n ** 18n;
 const SEQUENCER_STALE_SECONDS = 120;
-const SEQUENCER_RECOVERY_GRACE_SECONDS = 60;
+const SEQUENCER_RECOVERY_GRACE_SECONDS = 120;
 const AAVE_POOL_ABI = [
   {
     type: 'function',
@@ -61,9 +63,9 @@ async function poolAddress(chain: ChainCfg): Promise<Address> {
   return pool;
 }
 
-function rayToFloat(value: bigint): number {
+function wadToFloat(value: bigint): number {
   if (value === 0n) return 0;
-  return Number(value) / Number(RAY);
+  return Number(value) / Number(WAD);
 }
 
 function publicClient(chain: ChainCfg) {
@@ -81,10 +83,14 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
   const agentLog = log.child({ chain: chain.name, chainId: chain.id });
   agentLog.info('starting agent');
 
-  for await (const candidate of streamCandidates(cfg)) {
+  const iterator = streamCandidates(cfg)[Symbol.asyncIterator]();
+  let subgraphPromise = iterator.next();
+  const realtimeWatcher = await createChainWatcher(chain, cfg);
+
+  const processCandidate = async (candidate: Candidate, source: 'subgraph' | 'realtime') => {
     // This agent only handles candidates for its own chain
     if (candidate.chainId !== chain.id) {
-      continue;
+      return;
     }
 
     counter.candidates.inc({ chain: chain.name });
@@ -93,22 +99,22 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
     if (denyAssets.includes(candidate.debt.symbol) || denyAssets.includes(candidate.collateral.symbol)) {
       counter.denylistSkip.inc({ chain: chain.name });
       await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason: 'asset-denylist' });
-      agentLog.debug({ borrower: candidate.borrower, debt: candidate.debt.symbol, collateral: candidate.collateral.symbol }, 'asset-denylist');
-      continue;
+      agentLog.debug({ borrower: candidate.borrower, debt: candidate.debt.symbol, collateral: candidate.collateral.symbol, source }, 'asset-denylist');
+      return;
     }
 
     const policy = cfg.assets[candidate.debt.symbol];
     if (!policy) {
-      agentLog.warn({ asset: candidate.debt.symbol }, 'missing-policy');
-      continue;
+      agentLog.warn({ asset: candidate.debt.symbol, source }, 'missing-policy');
+      return;
     }
 
     const market = cfg.markets.find(
       (m) => m.enabled && m.chainId === candidate.chainId && m.debtAsset === candidate.debt.symbol && m.collateralAsset === candidate.collateral.symbol
     );
     if (!market) {
-      agentLog.debug({ market: candidate }, 'market-disabled');
-      continue;
+      agentLog.debug({ market: candidate, source }, 'market-disabled');
+      return;
     }
 
     const client = publicClient(chain);
@@ -127,14 +133,15 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
         status: 'policy_skip',
         reason: `sequencer ${sequencer.reason ?? 'unavailable'}`,
       });
-      agentLog.debug({ borrower: candidate.borrower, reason: sequencer.reason, updatedAt: sequencer.updatedAt }, 'skip-sequencer');
-      continue;
+      agentLog.debug({ borrower: candidate.borrower, reason: sequencer.reason, updatedAt: sequencer.updatedAt, source }, 'skip-sequencer');
+      return;
     }
+
     const debtToken = chain.tokens[candidate.debt.symbol];
     const collateralToken = chain.tokens[candidate.collateral.symbol];
     if (!debtToken || !collateralToken) {
-      agentLog.warn({ candidate }, 'token-metadata-missing');
-      continue;
+      agentLog.warn({ candidate, source }, 'token-metadata-missing');
+      return;
     }
 
     try {
@@ -143,13 +150,23 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
         if (await isThrottled(chain.id, candidate.borrower, throttleLimit)) {
           counter.throttled.inc({ chain: chain.name });
           await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'throttled' });
-          agentLog.debug({ borrower: candidate.borrower }, 'throttled-skip');
-          continue;
+          agentLog.debug({ borrower: candidate.borrower, source }, 'throttled-skip');
+          return;
         }
       }
 
-      const debtPriceUsd = (await oraclePriceUsd(client, debtToken)) ?? 1;
-      const collPriceUsd = (await oraclePriceUsd(client, collateralToken)) ?? debtPriceUsd;
+      const debtPriceUsd = await oraclePriceUsd(client, debtToken);
+      const collPriceUsd = await oraclePriceUsd(client, collateralToken);
+      if (debtPriceUsd == null || collPriceUsd == null) {
+        await recordAttemptRow({
+          chainId: chain.id,
+          borrower: candidate.borrower,
+          status: 'policy_skip',
+          reason: 'price-missing',
+        });
+        agentLog.debug({ borrower: candidate.borrower, debt: candidate.debt.symbol, collateral: candidate.collateral.symbol, source }, 'price-missing');
+        return;
+      }
       const { options: routeOptions, gapFee, gapRouter } = buildRouteOptions(cfg, chain, candidate.debt.symbol, candidate.collateral.symbol);
       const gap = await oracleDexGapBps({
         client,
@@ -162,8 +179,8 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
       if (gap > policy.gapCapBps) {
         counter.gapSkip.inc({ chain: chain.name });
         await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'gap_skip', reason: `gap ${gap}bps` });
-        agentLog.debug({ borrower: candidate.borrower, gap }, 'skip-gap');
-        continue;
+        agentLog.debug({ borrower: candidate.borrower, gap, source }, 'skip-gap');
+        return;
       }
 
       let healthFactor: number | null = null;
@@ -176,23 +193,24 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
           functionName: 'getUserAccountData',
           args: [candidate.borrower],
         })) as readonly [bigint, bigint, bigint, bigint, bigint, bigint];
-        healthFactor = rayToFloat(accountData[5]);
+        healthFactor = wadToFloat(accountData[5]);
         if (!Number.isFinite(healthFactor) || healthFactor <= 0) {
-          agentLog.warn({ borrower: candidate.borrower }, 'hf-invalid');
+          agentLog.warn({ borrower: candidate.borrower, source }, 'hf-invalid');
           await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason: 'hf-invalid' });
-          continue;
+          return;
         }
         if (healthFactor >= hfMax) {
           await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason: `hf ${healthFactor.toFixed(4)}` });
-          agentLog.debug({ borrower: candidate.borrower, healthFactor, hfMax }, 'skip-health-factor');
-          continue;
+          agentLog.debug({ borrower: candidate.borrower, healthFactor, hfMax, source }, 'skip-health-factor');
+          return;
         }
       } catch (hfErr) {
-        agentLog.warn({ borrower: candidate.borrower, err: (hfErr as Error).message }, 'hf-fetch-failed');
+        agentLog.warn({ borrower: candidate.borrower, err: (hfErr as Error).message, source }, 'hf-fetch-failed');
         await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason: 'hf-fetch-failed' });
-        continue;
+        return;
       }
 
+      const trigger = (candidate as any).__trigger;
       agentLog.debug({
         borrower: candidate.borrower,
         debtAmount: candidate.debt.amount.toString(),
@@ -200,26 +218,28 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
         routes: routeOptions.map((r) => r.type),
         healthFactor,
         hfMax,
+        source,
+        trigger,
       }, 'candidate-considered');
 
       const contract = liquidatorForChain(cfg, chain.id);
       if (!contract || /^0x0+$/.test(contract)) {
-        agentLog.warn('missing-liquidator-address');
-        continue;
+        agentLog.warn({ source }, 'missing-liquidator-address');
+        return;
       }
       if (!cfg.beneficiary) {
-        agentLog.warn('missing-beneficiary-address');
-        continue;
+        agentLog.warn({ source }, 'missing-beneficiary-address');
+        return;
       }
       const pk = privateKeyForChain(chain);
       if (!pk) {
-        agentLog.warn('missing-private-key');
-        continue;
+        agentLog.warn({ source }, 'missing-private-key');
+        return;
       }
       const executor = executorAddressForChain(chain);
       if (!executor) {
-        agentLog.warn('missing-executor-address');
-        continue;
+        agentLog.warn({ source }, 'missing-executor-address');
+        return;
       }
 
       const plan = await simulate({
@@ -239,6 +259,7 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
         gasCapUsd: cfg.risk.gasCapUsd,
         maxRepayUsd: cfg.risk.maxRepayUsd,
       });
+      // TODO: branch here for RFQ execution once the contract codec supports RFQ calldata payloads.
 
       if (!plan) {
         agentLog.debug({
@@ -252,13 +273,15 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
           routes: routeOptions.map((r) => r.type),
           healthFactor,
           hfMax,
+          source,
+          trigger,
         }, 'plan-null');
         const reason = ['plan-null'];
         if (healthFactor !== null) {
           reason.push(`hf ${healthFactor.toFixed(4)}`);
         }
         await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason: reason.join(' ') });
-        continue;
+        return;
       }
 
       counter.plansReady.inc({ chain: chain.name });
@@ -270,8 +293,8 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
       if (cfg.risk.dryRun) {
         counter.plansDryRun.inc({ chain: chain.name });
         await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'dry_run', reason: `netBps ${plan.estNetBps.toFixed(2)}` });
-        agentLog.info({ borrower: candidate.borrower, repay: plan.repayAmount.toString(), netBps: plan.estNetBps }, 'DRY-RUN');
-        continue;
+        agentLog.info({ borrower: candidate.borrower, repay: plan.repayAmount.toString(), netBps: plan.estNetBps, source, trigger }, 'DRY-RUN');
+        return;
       }
 
       const sequencerPreSend = await checkSequencerStatus({
@@ -282,9 +305,9 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
       });
       if (!sequencerPreSend.ok) {
         const reason = `sequencer ${sequencerPreSend.reason ?? 'unavailable'}`;
-        agentLog.warn({ borrower: candidate.borrower, reason }, 'sequencer-down-skipping-tx');
+        agentLog.warn({ borrower: candidate.borrower, reason, source }, 'sequencer-down-skipping-tx');
         await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason });
-        continue;
+        return;
       }
 
       await recordThrottleAttempt(chain.id, candidate.borrower, 3600);
@@ -297,7 +320,7 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
         cfg.risk.maxLiveExecutions > 0 &&
         plansSentCount >= cfg.risk.maxLiveExecutions
       ) {
-        agentLog.warn({ txnIdx: plansSentCount, maxLiveExecutions: cfg.risk.maxLiveExecutions }, 'live-execution-cap-reached');
+        agentLog.warn({ txnIdx: plansSentCount, maxLiveExecutions: cfg.risk.maxLiveExecutions, source }, 'live-execution-cap-reached');
         process.exit(0);
       }
 
@@ -311,6 +334,7 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
             pendingRepayUsd: plan.repayUsd,
             sessionNotionalUsd,
             maxSessionNotionalUsd: cfg.risk.maxSessionNotionalUsd,
+            source,
           },
           'session-notional-cap-hit'
         );
@@ -346,21 +370,21 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
       if (plansReadyCount > 0) {
         gauge.hitRate.set(plansSentCount / plansReadyCount);
       }
-      agentLog.info({ borrower: candidate.borrower, netBps: plan.estNetBps, txHash, repayUsd: plan.repayUsd, sessionNotionalUsd, healthFactor }, 'liquidation-sent');
+      agentLog.info({ borrower: candidate.borrower, netBps: plan.estNetBps, txHash, repayUsd: plan.repayUsd, sessionNotionalUsd, healthFactor, source, trigger }, 'liquidation-sent');
 
       if (
         cfg.risk.maxLiveExecutions !== undefined &&
         cfg.risk.maxLiveExecutions > 0 &&
         plansSentCount >= cfg.risk.maxLiveExecutions
       ) {
-        agentLog.warn({ maxLiveExecutions: cfg.risk.maxLiveExecutions }, 'live-execution-cap-hit-stopping');
+        agentLog.warn({ maxLiveExecutions: cfg.risk.maxLiveExecutions, source }, 'live-execution-cap-hit-stopping');
         process.exit(0);
       }
     } catch (err) {
       if (err instanceof Error && err.message === 'HealthFactorNotBelowThreshold') {
         await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason: 'hf-recovered' });
-        agentLog.debug({ borrower: candidate.borrower }, 'skip-hf-recovered');
-        continue;
+        agentLog.debug({ borrower: candidate.borrower, source }, 'skip-hf-recovered');
+        return;
       }
 
       counter.plansError.inc({ chain: chain.name });
@@ -384,8 +408,49 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
           }, 'critical');
         }
       }
-      agentLog.error({ err: (err as Error).message, borrower: candidate.borrower }, 'candidate-failed');
+      agentLog.error({ err: (err as Error).message, borrower: candidate.borrower, source }, 'candidate-failed');
     }
+  };
+
+  try {
+    while (true) {
+      if (realtimeWatcher) {
+        const immediate = realtimeWatcher.tryShift();
+        if (immediate) {
+          await processCandidate(immediate, 'realtime');
+          continue;
+        }
+
+        const result = await Promise.race([
+          subgraphPromise.then((value) => ({ type: 'subgraph' as const, value })),
+          realtimeWatcher
+            .next()
+            .then((candidate) => ({ type: 'realtime' as const, candidate }))
+            .catch(() => ({ type: 'stopped' as const })),
+        ]);
+
+        if (result.type === 'stopped') {
+          break;
+        }
+
+        if (result.type === 'realtime') {
+          await processCandidate(result.candidate, 'realtime');
+          continue;
+        }
+
+        const { done, value } = result.value;
+        if (done) break;
+        await processCandidate(value, 'subgraph');
+        subgraphPromise = iterator.next();
+      } else {
+        const { done, value } = await subgraphPromise;
+        if (done) break;
+        await processCandidate(value, 'subgraph');
+        subgraphPromise = iterator.next();
+      }
+    }
+  } finally {
+    realtimeWatcher?.stop();
   }
 }
 

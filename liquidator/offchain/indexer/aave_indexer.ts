@@ -11,7 +11,7 @@ export type Candidate = {
   healthFactor: number;
 };
 
-const SUBGRAPH_ENV_KEYS: Record<number, string> = {
+export const SUBGRAPH_ENV_KEYS: Record<number, string> = {
   42161: 'AAVE_V3_SUBGRAPH_ARB',
   10: 'AAVE_V3_SUBGRAPH_OP',
   8453: 'AAVE_V3_SUBGRAPH_BASE',
@@ -32,7 +32,7 @@ const FALLBACK_SUBGRAPH_URL: Record<number, string> = {
   137: '',
 };
 
-function buildSubgraphUrl(chainId: number): string {
+export function buildSubgraphUrl(chainId: number): string {
   const envKey = SUBGRAPH_ENV_KEYS[chainId];
   const override = envKey ? process.env[envKey] : undefined;
   if (override && !override.includes('MISSING')) return override;
@@ -94,16 +94,55 @@ type SubgraphUserReserve = {
   currentATokenBalance?: string;
 };
 
-const POLL_MS = 500;
-const HF_THRESHOLD = 1.1; // "Watch zone" - accounts with HF < 1.1
+const QUERY_USER_RESERVES_BY_USER = `
+  query GetUserReservesByUser($user: String!) {
+    userReserves(
+      where: {
+        user: $user
+        currentTotalDebt_not: "0"
+      }
+    ) {
+      user {
+        id
+      }
+      reserve {
+        id
+        symbol
+        decimals
+        underlyingAsset
+        reserveLiquidationThreshold
+        price {
+          priceInEth
+        }
+      }
+      usageAsCollateralEnabledOnUser
+      currentTotalDebt
+      currentATokenBalance
+    }
+  }
+`;
+
 const PRICE_SCALE = 100_000_000n; // priceInEth precision (1e8)
 const LIQ_THRESHOLD_SCALE = 10_000n;
-const DEDUPE_MS = 5 * 60 * 1000;
 const AUTH_ERROR_REGEX = /(payment required|auth error|unauthorized|invalid api key|does not exist)/i;
 const AUTH_ALERT_COOLDOWN_MS = 10 * 60 * 1000;
 const lastAuthAlert = new Map<string, number>();
 
-async function graphFetch<T = any>(url: string, query: string, variables: Record<string, any>): Promise<T> {
+function getIndexerSettings(cfg: AppConfig) {
+  const rawPoll = cfg.indexer?.pollMs ?? 500;
+  const rawDedupe = cfg.indexer?.dedupeMs ?? 5 * 60 * 1000;
+  const rawFirst = cfg.indexer?.subgraphFirst ?? 500;
+  const rawThreshold = cfg.indexer?.hfThreshold ?? 1.1;
+
+  return {
+    pollMs: Math.max(50, rawPoll),
+    hfThreshold: Math.max(1.0, rawThreshold),
+    dedupeMs: Math.max(5_000, rawDedupe),
+    subgraphFirst: Math.max(1, Math.min(rawFirst, 1000)),
+  };
+}
+
+export async function graphFetch<T = any>(url: string, query: string, variables: Record<string, any>): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   const apiKey = process.env.GRAPH_API_KEY?.trim();
   if (apiKey) headers.authorization = `Bearer ${apiKey}`;
@@ -129,7 +168,7 @@ async function graphFetch<T = any>(url: string, query: string, variables: Record
   return json.data as T;
 }
 
-function parseBigIntOrZero(v: string | undefined): bigint {
+export function parseBigIntOrZero(v: string | undefined): bigint {
   try {
     return v ? BigInt(v) : 0n;
   } catch {
@@ -137,13 +176,13 @@ function parseBigIntOrZero(v: string | undefined): bigint {
   }
 }
 
-type UserReserveBucket = {
+export type UserReserveBucket = {
   reserves: SubgraphUserReserve[];
   totalDebtEth: bigint;
   totalAdjustedCollateralEth: bigint;
 };
 
-function normalizeAddress(addr: string | undefined): `0x${string}` | null {
+export function normalizeAddress(addr: string | undefined): `0x${string}` | null {
   if (!addr) return null;
   if (addr.startsWith('0x') && addr.length === 42) {
     return addr.toLowerCase() as `0x${string}`;
@@ -156,7 +195,7 @@ function normalizeAddress(addr: string | undefined): `0x${string}` | null {
   return null;
 }
 
-function groupUserReserves(reserves: SubgraphUserReserve[]): Map<string, UserReserveBucket> {
+export function groupUserReserves(reserves: SubgraphUserReserve[]): Map<string, UserReserveBucket> {
   const grouped = new Map<string, UserReserveBucket>();
   for (const reserve of reserves) {
     const userId = reserve.user?.id;
@@ -195,11 +234,16 @@ function groupUserReserves(reserves: SubgraphUserReserve[]): Map<string, UserRes
   return grouped;
 }
 
-function buildCandidatesFromBucket(userId: string, chainId: number, bucket: UserReserveBucket): Candidate[] {
+export function buildCandidatesFromBucket(
+  userId: string,
+  chainId: number,
+  bucket: UserReserveBucket,
+  hfThreshold: number
+): Candidate[] {
   const healthFactor = bucket.totalDebtEth === 0n
     ? Number.POSITIVE_INFINITY
     : Number((bucket.totalAdjustedCollateralEth * 1_000_000n) / bucket.totalDebtEth) / 1_000_000;
-  if (!Number.isFinite(healthFactor) || healthFactor <= 0 || healthFactor >= HF_THRESHOLD) return [];
+  if (!Number.isFinite(healthFactor) || healthFactor <= 0 || healthFactor >= hfThreshold) return [];
 
   const debts: Candidate['debt'][] = [];
   const collaterals: Candidate['collateral'][] = [];
@@ -244,6 +288,8 @@ function delay(ms: number) {
 
 export async function* streamCandidates(cfg: AppConfig): AsyncGenerator<Candidate> {
   const dedupe = new Map<string, number>();
+  const { dedupeMs, pollMs, subgraphFirst, hfThreshold } = getIndexerSettings(cfg);
+  const pageSize = subgraphFirst;
   while (true) {
     for (const chain of cfg.chains.filter((c) => c.enabled)) {
       const subgraph = buildSubgraphUrl(chain.id);
@@ -252,7 +298,7 @@ export async function* streamCandidates(cfg: AppConfig): AsyncGenerator<Candidat
       try {
         const t0 = Date.now();
         const response = await graphFetch<{ userReserves: SubgraphUserReserve[] }>(subgraph, QUERY_USER_RESERVES_BY_HF, {
-          first: 500,
+          first: pageSize,
         });
         const reserves = response?.userReserves ?? [];
         const dt = Date.now() - t0;
@@ -260,13 +306,13 @@ export async function* streamCandidates(cfg: AppConfig): AsyncGenerator<Candidat
 
         const grouped = groupUserReserves(reserves);
         for (const [userId, bucket] of grouped.entries()) {
-          const candidates = buildCandidatesFromBucket(userId, chain.id, bucket);
+          const candidates = buildCandidatesFromBucket(userId, chain.id, bucket, hfThreshold);
           for (const candidate of candidates) {
             // Deduplicate candidates to avoid processing the same one too frequently
             const key = `${candidate.chainId}:${candidate.borrower}:${candidate.debt.address}:${candidate.collateral.address}`;
             const now = Date.now();
             const last = dedupe.get(key) ?? 0;
-            if (now - last < DEDUPE_MS) continue;
+            if (now - last < dedupeMs) continue;
             dedupe.set(key, now);
             yield candidate;
           }
@@ -291,6 +337,69 @@ export async function* streamCandidates(cfg: AppConfig): AsyncGenerator<Candidat
       }
     }
 
-    await delay(POLL_MS);
+    await delay(pollMs);
   }
+}
+
+export async function fetchBorrowerCandidates(
+  cfg: AppConfig,
+  chain: ChainCfg,
+  borrower: `0x${string}`
+): Promise<Candidate[]> {
+  const subgraph = buildSubgraphUrl(chain.id);
+  if (!subgraph) return [];
+
+  const userId = borrower.toLowerCase();
+  const { hfThreshold } = getIndexerSettings(cfg);
+  try {
+    const response = await graphFetch<{ userReserves: SubgraphUserReserve[] }>(
+      subgraph,
+      QUERY_USER_RESERVES_BY_USER,
+      { user: userId }
+    );
+    const reserves = response?.userReserves ?? [];
+    if (reserves.length === 0) return [];
+    const grouped = groupUserReserves(reserves);
+    const bucket = grouped.get(userId);
+    if (!bucket) return [];
+    return buildCandidatesFromBucket(userId, chain.id, bucket, hfThreshold);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.debug({ chainId: chain.id, borrower: userId, err: message }, 'fetch-borrower-candidates-failed');
+    return [];
+  }
+}
+
+export async function pollChainCandidatesOnce(
+  cfg: AppConfig,
+  chain: ChainCfg,
+  first = 500
+): Promise<Candidate[]> {
+  const subgraph = buildSubgraphUrl(chain.id);
+  if (!subgraph) return [];
+  const out: Candidate[] = [];
+
+  const { subgraphFirst, hfThreshold } = getIndexerSettings(cfg);
+  const limit = subgraphFirst || first;
+
+  try {
+    const response = await graphFetch<{ userReserves: SubgraphUserReserve[] }>(
+      subgraph,
+      QUERY_USER_RESERVES_BY_HF,
+      { first: limit }
+    );
+    const reserves = response?.userReserves ?? [];
+    const grouped = groupUserReserves(reserves);
+    for (const [userId, bucket] of grouped.entries()) {
+      const candidates = buildCandidatesFromBucket(userId, chain.id, bucket, hfThreshold);
+      for (const candidate of candidates) {
+        out.push(candidate);
+      }
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.debug({ chainId: chain.id, err: message }, 'poll-chain-candidates-failed');
+  }
+
+  return out;
 }
