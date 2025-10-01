@@ -89,6 +89,14 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
 
     counter.candidates.inc({ chain: chain.name });
 
+    const denyAssets = cfg.risk.denyAssets ?? [];
+    if (denyAssets.includes(candidate.debt.symbol) || denyAssets.includes(candidate.collateral.symbol)) {
+      counter.denylistSkip.inc({ chain: chain.name });
+      await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason: 'asset-denylist' });
+      agentLog.debug({ borrower: candidate.borrower, debt: candidate.debt.symbol, collateral: candidate.collateral.symbol }, 'asset-denylist');
+      continue;
+    }
+
     const policy = cfg.assets[candidate.debt.symbol];
     if (!policy) {
       agentLog.warn({ asset: candidate.debt.symbol }, 'missing-policy');

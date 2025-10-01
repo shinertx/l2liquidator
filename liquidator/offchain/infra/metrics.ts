@@ -30,6 +30,7 @@ export const counter = {
   throttled: new client.Counter({ name: 'candidates_throttled_total', help: 'Candidates skipped due to throttle window', labelNames: ['chain'] }),
   gapSkip: new client.Counter({ name: 'candidates_gap_skip_total', help: 'Candidates skipped due to oracle-DEX gap', labelNames: ['chain'] }),
   sequencerSkip: new client.Counter({ name: 'candidates_sequencer_skip_total', help: 'Candidates skipped due to sequencer downtime or stale feed', labelNames: ['chain'] }),
+  denylistSkip: new client.Counter({ name: 'candidates_denylist_skip_total', help: 'Candidates skipped due to asset denylist', labelNames: ['chain'] }),
   plansReady: new client.Counter({ name: 'plans_ready_total', help: 'Plans produced by simulator', labelNames: ['chain'] }),
   plansDryRun: new client.Counter({ name: 'plans_dry_run_total', help: 'Plans recorded in dry-run mode', labelNames: ['chain'] }),
   plansSent: new client.Counter({ name: 'plans_sent_total', help: 'Transactions submitted on-chain', labelNames: ['chain'] }),

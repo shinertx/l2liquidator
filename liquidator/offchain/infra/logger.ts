@@ -7,6 +7,30 @@ type Target = TransportMultiOptions['targets'][number];
 const level = process.env.LOG_LEVEL || 'info';
 const targets: Target[] = [];
 
+function parseSize(input: string | undefined, fallback: number): number {
+	if (!input) return fallback;
+	const match = /^\s*(\d+(?:\.\d+)?)([kKmMgG]?[bB]?)?\s*$/.exec(input);
+	if (!match) return fallback;
+	const value = Number(match[1]);
+	if (!Number.isFinite(value) || value <= 0) return fallback;
+	const unit = match[2]?.toLowerCase() ?? '';
+	switch (unit.replace('b', '')) {
+		case 'k':
+			return Math.floor(value * 1024);
+		case 'm':
+			return Math.floor(value * 1024 * 1024);
+		case 'g':
+			return Math.floor(value * 1024 * 1024 * 1024);
+		default:
+			return Math.floor(value);
+	}
+}
+
+function parseIntEnv(input: string | undefined, fallback: number): number {
+	const parsed = Number.parseInt(input ?? '', 10);
+	return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 if (process.env.LOG_DISABLE_STDOUT !== '1') {
 	targets.push({
 		target: 'pino/file',
@@ -18,13 +42,20 @@ if (process.env.LOG_DISABLE_STDOUT !== '1') {
 const logDir = process.env.LOG_DIR
 	? resolve(process.cwd(), process.env.LOG_DIR)
 	: resolve(process.cwd(), 'logs');
+const logFileName = process.env.LOG_FILE_NAME ?? 'live.log';
+const logMaxBytes = parseSize(process.env.LOG_MAX_BYTES, 20 * 1024 * 1024);
+const logMaxFiles = parseIntEnv(process.env.LOG_MAX_FILES, 10);
 
 try {
 	mkdirSync(logDir, { recursive: true });
-	const destination = resolve(logDir, process.env.LOG_FILE_NAME ?? 'live.log');
 	targets.push({
-		target: 'pino/file',
-		options: { destination, mkdir: true },
+		target: resolve(__dirname, './rolling-log-target.js'),
+		options: {
+			dir: logDir,
+			baseName: logFileName,
+			maxBytes: logMaxBytes,
+			maxFiles: logMaxFiles,
+		},
 		level,
 	});
 } catch (err) {

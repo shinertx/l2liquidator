@@ -158,6 +158,7 @@ risk:
   maxRepayUsd: 20
   maxLiveExecutions: 2
   maxSessionNotionalUsd: 45
+  denyAssets: ["MAI"]
 
 routing:
   prefer:
