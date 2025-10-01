@@ -74,6 +74,7 @@ risk:
   maxRepayUsd: 100.0
   maxLiveExecutions: 1
   maxSessionNotionalUsd: 400.0
+  denyAssets: []
 
 analysis:
   openaiKey: ${OPENAI_API_KEY}
