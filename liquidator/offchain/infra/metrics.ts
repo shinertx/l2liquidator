@@ -26,13 +26,14 @@ registry.registerMetric(histogram.dbQueryDuration);
 registry.registerMetric(histogram.rpcCallDuration);
 
 export const counter = {
-  candidates: new client.Counter({ name: 'candidates_total', help: 'Total liquidation candidates processed' }),
-  throttled: new client.Counter({ name: 'candidates_throttled_total', help: 'Candidates skipped due to throttle window' }),
-  gapSkip: new client.Counter({ name: 'candidates_gap_skip_total', help: 'Candidates skipped due to oracle-DEX gap' }),
-  plansReady: new client.Counter({ name: 'plans_ready_total', help: 'Plans produced by simulator' }),
-  plansDryRun: new client.Counter({ name: 'plans_dry_run_total', help: 'Plans recorded in dry-run mode' }),
-  plansSent: new client.Counter({ name: 'plans_sent_total', help: 'Transactions submitted on-chain' }),
-  plansError: new client.Counter({ name: 'plans_error_total', help: 'Errors while processing candidate' }),
+  candidates: new client.Counter({ name: 'candidates_total', help: 'Total liquidation candidates processed', labelNames: ['chain'] }),
+  throttled: new client.Counter({ name: 'candidates_throttled_total', help: 'Candidates skipped due to throttle window', labelNames: ['chain'] }),
+  gapSkip: new client.Counter({ name: 'candidates_gap_skip_total', help: 'Candidates skipped due to oracle-DEX gap', labelNames: ['chain'] }),
+  sequencerSkip: new client.Counter({ name: 'candidates_sequencer_skip_total', help: 'Candidates skipped due to sequencer downtime or stale feed', labelNames: ['chain'] }),
+  plansReady: new client.Counter({ name: 'plans_ready_total', help: 'Plans produced by simulator', labelNames: ['chain'] }),
+  plansDryRun: new client.Counter({ name: 'plans_dry_run_total', help: 'Plans recorded in dry-run mode', labelNames: ['chain'] }),
+  plansSent: new client.Counter({ name: 'plans_sent_total', help: 'Transactions submitted on-chain', labelNames: ['chain'] }),
+  plansError: new client.Counter({ name: 'plans_error_total', help: 'Errors while processing candidate', labelNames: ['chain'] }),
   dbErrors: new client.Counter({ name: 'db_errors_total', help: 'Total database errors' }),
   rpcErrors: new client.Counter({ name: 'rpc_errors_total', help: 'Total RPC errors' }),
 };

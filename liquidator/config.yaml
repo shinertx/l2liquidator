@@ -13,6 +13,7 @@ chains:
     aaveProvider: "0xa97684EaD0E402dC232d5A977953DF7ECBaB3CDb"
     uniV3Router: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
     quoter: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e"
+    sequencerFeed: "0xFdB631F5EE196F0ed6FAa767959853A9F217697D"
     enabled: true
     tokens:
       USDC:
@@ -31,6 +32,7 @@ chains:
     aaveProvider: "0xa97684EaD0E402dC232d5A977953DF7ECBaB3CDb"
     uniV3Router: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
     quoter: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e"
+    sequencerFeed: "0x371EAD81c9102C9BF4874A9075FFFf170F2Ee389"
     enabled: true
     tokens:
       USDC:
@@ -49,6 +51,7 @@ chains:
     aaveProvider: ${BASE_AAVE_V3_PROVIDER}
     uniV3Router: "0x2626664c2603336E57B271c5C0b26F421741e481"
     quoter: "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a"
+    sequencerFeed: "0xBCF85224fc0756B9Fa45aA7892530B47e10b6433"
     enabled: false
     tokens:
       USDC:
@@ -87,6 +90,30 @@ assets:
     floorBps: 30
     gapCapBps: 60
     slippageBps: 30
+  USDT:
+    floorBps: 30
+    gapCapBps: 50
+    slippageBps: 60
+  DAI:
+    floorBps: 30
+    gapCapBps: 50
+    slippageBps: 50
+  sUSD:
+    floorBps: 30
+    gapCapBps: 50
+    slippageBps: 50
+  LINK:
+    floorBps: 40
+    gapCapBps: 80
+    slippageBps: 30
+  wstETH:
+    floorBps: 30
+    gapCapBps: 70
+    slippageBps: 30
+  WBTC:
+    floorBps: 50
+    gapCapBps: 100
+    slippageBps: 40
 
 markets:
   - protocol: aavev3
@@ -136,10 +163,18 @@ routing:
   prefer:
     42161:
       USDC-WETH: ["UniV3:500","UniV3:3000","Camelot"]
+      LINK-USDC: ["UniV3:3000","UniV3:500"]
+      wstETH-WETH: ["UniV3:500"]
+      WBTC-USDC: ["UniV3:3000","UniV3:500"]
     10:
       USDC-WETH: ["UniV3:500","UniV3:3000","Velodrome"]
+      sUSD-USDC: ["Velodrome"]
+      LINK-USDC: ["UniV3:3000","UniV3:500"]
+      wstETH-WETH: ["Velodrome","UniV3:500"]
+      WBTC-USDC: ["Velodrome","UniV3:3000"]
     8453:
       USDC-WETH: ["UniV3:500","UniV3:3000","Aerodrome"]
+      wstETH-WETH: ["UniV3:500"]
     137:
       USDC-WETH: ["UniV3:500","UniV3:3000"]
 

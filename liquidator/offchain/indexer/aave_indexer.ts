@@ -46,27 +46,27 @@ function buildSubgraphUrl(chainId: number): string {
 
 // Query for reserves tied to users with health factor below a certain threshold.
 const QUERY_USER_RESERVES_BY_HF = `
-  query GetUserReservesByHealthFactor($first: Int!, $lt: BigDecimal!, $minBorrowUsd: BigDecimal!) {
+  query GetUserReservesByHealthFactor($first: Int!) {
     userReserves(
       first: $first,
-      orderBy: user__healthFactor,
-      orderDirection: asc,
+      orderBy: user__borrowedReservesCount,
+      orderDirection: desc,
       where: {
-        user_: {
-          healthFactor_lt: $lt,
-          totalBorrowsUSD_gt: $minBorrowUsd
-        }
+        user_: { borrowedReservesCount_gt: 0 }
       }
     ) {
       user {
         id
-        healthFactor
       }
       reserve {
         id
         symbol
         decimals
         underlyingAsset
+        reserveLiquidationThreshold
+        price {
+          priceInEth
+        }
       }
       usageAsCollateralEnabledOnUser
       currentTotalDebt
@@ -78,22 +78,26 @@ const QUERY_USER_RESERVES_BY_HF = `
 type SubgraphUserReserve = {
   user: {
     id: string;
-    healthFactor?: string;
   };
   reserve: {
     id: string;
     symbol: string;
     decimals: number;
     underlyingAsset?: string;
+    reserveLiquidationThreshold?: string;
+    price?: {
+      priceInEth?: string;
+    };
   };
   usageAsCollateralEnabledOnUser: boolean;
   currentTotalDebt?: string;
   currentATokenBalance?: string;
 };
 
-const POLL_MS = 20_000;
-const HF_THRESHOLD = '1.1'; // "Watch zone" - accounts with HF < 1.1
-const MIN_BORROW_USD = '10';
+const POLL_MS = 500;
+const HF_THRESHOLD = 1.1; // "Watch zone" - accounts with HF < 1.1
+const PRICE_SCALE = 100_000_000n; // priceInEth precision (1e8)
+const LIQ_THRESHOLD_SCALE = 10_000n;
 const DEDUPE_MS = 5 * 60 * 1000;
 const AUTH_ERROR_REGEX = /(payment required|auth error|unauthorized|invalid api key|does not exist)/i;
 const AUTH_ALERT_COOLDOWN_MS = 10 * 60 * 1000;
@@ -125,11 +129,6 @@ async function graphFetch<T = any>(url: string, query: string, variables: Record
   return json.data as T;
 }
 
-function parseHealthFactor(raw: string): number {
-  const numeric = Number(raw);
-  return Number.isNaN(numeric) ? 0 : numeric;
-}
-
 function parseBigIntOrZero(v: string | undefined): bigint {
   try {
     return v ? BigInt(v) : 0n;
@@ -139,8 +138,9 @@ function parseBigIntOrZero(v: string | undefined): bigint {
 }
 
 type UserReserveBucket = {
-  healthFactor: number;
   reserves: SubgraphUserReserve[];
+  totalDebtEth: bigint;
+  totalAdjustedCollateralEth: bigint;
 };
 
 function normalizeAddress(addr: string | undefined): `0x${string}` | null {
@@ -161,21 +161,46 @@ function groupUserReserves(reserves: SubgraphUserReserve[]): Map<string, UserRes
   for (const reserve of reserves) {
     const userId = reserve.user?.id;
     if (!userId?.startsWith('0x')) continue;
-    const hf = parseHealthFactor(reserve.user.healthFactor ?? '0');
-    if (hf <= 0) continue;
     if (!grouped.has(userId)) {
-      grouped.set(userId, { healthFactor: hf, reserves: [] });
+      grouped.set(userId, { reserves: [], totalDebtEth: 0n, totalAdjustedCollateralEth: 0n });
     }
     const bucket = grouped.get(userId)!;
-    if (hf < bucket.healthFactor) {
-      bucket.healthFactor = hf;
-    }
     bucket.reserves.push(reserve);
+
+    const priceRaw = reserve.reserve.price?.priceInEth;
+    const priceInEth = parseBigIntOrZero(priceRaw);
+    if (priceInEth === 0n) continue;
+
+    const decimals = typeof reserve.reserve.decimals === 'number' ? reserve.reserve.decimals : Number(reserve.reserve.decimals ?? 0);
+    const unit = 10n ** BigInt(decimals);
+
+    const debtBalance = parseBigIntOrZero(reserve.currentTotalDebt);
+    if (debtBalance > 0n) {
+      const debtEth = (debtBalance * priceInEth) / (unit * PRICE_SCALE);
+      bucket.totalDebtEth += debtEth;
+    }
+
+    if (reserve.usageAsCollateralEnabledOnUser) {
+      const collateralBalance = parseBigIntOrZero(reserve.currentATokenBalance);
+      if (collateralBalance > 0n) {
+        const collateralEth = (collateralBalance * priceInEth) / (unit * PRICE_SCALE);
+        if (collateralEth > 0n) {
+          const threshold = parseBigIntOrZero(reserve.reserve.reserveLiquidationThreshold);
+          const adjusted = (collateralEth * threshold) / LIQ_THRESHOLD_SCALE;
+          bucket.totalAdjustedCollateralEth += adjusted;
+        }
+      }
+    }
   }
   return grouped;
 }
 
 function buildCandidatesFromBucket(userId: string, chainId: number, bucket: UserReserveBucket): Candidate[] {
+  const healthFactor = bucket.totalDebtEth === 0n
+    ? Number.POSITIVE_INFINITY
+    : Number((bucket.totalAdjustedCollateralEth * 1_000_000n) / bucket.totalDebtEth) / 1_000_000;
+  if (!Number.isFinite(healthFactor) || healthFactor <= 0 || healthFactor >= HF_THRESHOLD) return [];
+
   const debts: Candidate['debt'][] = [];
   const collaterals: Candidate['collateral'][] = [];
 
@@ -204,7 +229,7 @@ function buildCandidatesFromBucket(userId: string, chainId: number, bucket: User
       out.push({
         borrower: userId as `0x${string}`,
         chainId,
-        healthFactor: bucket.healthFactor,
+        healthFactor,
         debt,
         collateral,
       });
@@ -228,8 +253,6 @@ export async function* streamCandidates(cfg: AppConfig): AsyncGenerator<Candidat
         const t0 = Date.now();
         const response = await graphFetch<{ userReserves: SubgraphUserReserve[] }>(subgraph, QUERY_USER_RESERVES_BY_HF, {
           first: 500,
-          lt: HF_THRESHOLD,
-          minBorrowUsd: MIN_BORROW_USD,
         });
         const reserves = response?.userReserves ?? [];
         const dt = Date.now() - t0;

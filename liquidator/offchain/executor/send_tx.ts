@@ -1,4 +1,5 @@
 import { Address, BaseError, ContractFunctionRevertedError, createPublicClient, http } from 'viem';
+import { arbitrum, optimism, base, polygon } from 'viem/chains';
 import { wallet } from './mev_protect';
 import { encodePlan } from './build_tx';
 import LiquidatorAbi from './Liquidator.abi.json';
@@ -6,6 +7,8 @@ import { instrument } from '../infra/instrument';
 
 const HEALTH_FACTOR_ERROR = 'HealthFactorNotBelowThreshold';
 const HEALTH_FACTOR_SELECTOR = '0x930bb771';
+
+const CHAINS: Record<number, any> = { 42161: arbitrum, 10: optimism, 8453: base, 137: polygon };
 
 function isHealthFactorError(err: unknown): boolean {
   if (err instanceof BaseError) {
@@ -29,30 +32,12 @@ function isHealthFactorError(err: unknown): boolean {
         return true;
       }
     }
-
-    const shortMessage = (err as any).shortMessage as string | undefined;
-    if (typeof shortMessage === 'string') {
-      if (shortMessage.includes(HEALTH_FACTOR_ERROR) || shortMessage.includes(HEALTH_FACTOR_SELECTOR)) {
-        return true;
-      }
-    }
-  }
-
-  if (err instanceof Error) {
-    const { message } = err;
-    if (message.includes(HEALTH_FACTOR_ERROR) || message.includes(HEALTH_FACTOR_SELECTOR)) {
-      return true;
-    }
-  } else if (typeof err === 'object' && err !== null) {
-    const message = (err as any).message;
-    if (typeof message === 'string' && (message.includes(HEALTH_FACTOR_ERROR) || message.includes(HEALTH_FACTOR_SELECTOR))) {
-      return true;
-    }
   }
   return false;
 }
 
 export async function sendLiquidation(
+  chainId: number,
   chainRpc: string,
   pk: `0x${string}`,
   contract: Address,
@@ -82,7 +67,9 @@ export async function sendLiquidation(
 
   return instrument('rpc', 'writeContract', async () => {
     try {
-      return await w.writeContract({ ...data, gas, chain: undefined });
+      const chain = CHAINS[chainId];
+      if (!chain) throw new Error(`Unsupported chainId for sender: ${chainId}`);
+      return await w.writeContract({ ...data, gas, chain });
     } catch (err) {
       if (isHealthFactorError(err)) {
         throw new Error(HEALTH_FACTOR_ERROR);

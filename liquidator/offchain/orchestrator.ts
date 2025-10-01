@@ -13,10 +13,13 @@ import { sendLiquidation } from './executor/send_tx';
 import { getPoolFromProvider, logPoolsAtBoot } from './infra/aave_provider';
 import { buildRouteOptions } from './util/routes';
 import { emitAlert } from './infra/alerts';
+import { checkSequencerStatus } from './infra/sequencer';
 
 const DEFAULT_CLOSE_FACTOR_BPS = 5000;
 const DEFAULT_BONUS_BPS = 800;
 const RAY = 10n ** 27n;
+const SEQUENCER_STALE_SECONDS = 120;
+const SEQUENCER_RECOVERY_GRACE_SECONDS = 60;
 const AAVE_POOL_ABI = [
   {
     type: 'function',
@@ -101,6 +104,24 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
     }
 
     const client = publicClient(chain);
+
+    const sequencer = await checkSequencerStatus({
+      rpcUrl: chain.rpc,
+      feed: chain.sequencerFeed,
+      staleAfterSeconds: SEQUENCER_STALE_SECONDS,
+      recoveryGraceSeconds: SEQUENCER_RECOVERY_GRACE_SECONDS,
+    });
+    if (!sequencer.ok) {
+      counter.sequencerSkip.inc({ chain: chain.name });
+      await recordAttemptRow({
+        chainId: chain.id,
+        borrower: candidate.borrower,
+        status: 'policy_skip',
+        reason: `sequencer ${sequencer.reason ?? 'unavailable'}`,
+      });
+      agentLog.debug({ borrower: candidate.borrower, reason: sequencer.reason, updatedAt: sequencer.updatedAt }, 'skip-sequencer');
+      continue;
+    }
     const debtToken = chain.tokens[candidate.debt.symbol];
     const collateralToken = chain.tokens[candidate.collateral.symbol];
     if (!debtToken || !collateralToken) {
@@ -245,6 +266,19 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
         continue;
       }
 
+      const sequencerPreSend = await checkSequencerStatus({
+        rpcUrl: chain.rpc,
+        feed: chain.sequencerFeed,
+        staleAfterSeconds: SEQUENCER_STALE_SECONDS,
+        recoveryGraceSeconds: SEQUENCER_RECOVERY_GRACE_SECONDS,
+      });
+      if (!sequencerPreSend.ok) {
+        const reason = `sequencer ${sequencerPreSend.reason ?? 'unavailable'}`;
+        agentLog.warn({ borrower: candidate.borrower, reason }, 'sequencer-down-skipping-tx');
+        await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason });
+        continue;
+      }
+
       await recordThrottleAttempt(chain.id, candidate.borrower, 3600);
 
       const minProfit = (plan.repayAmount * BigInt(policy.floorBps)) / 10_000n;
@@ -276,6 +310,7 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
       }
 
       const txHash = await sendLiquidation(
+        chain.id,
         chain.rpc,
         pk,
         contract,
