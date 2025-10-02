@@ -1,27 +1,36 @@
 import './infra/env';
 import './infra/metrics_server';
 import { Address, createPublicClient, http } from 'viem';
-import { loadConfig, liquidatorForChain, ChainCfg, AppConfig } from './infra/config';
+import { performance } from 'perf_hooks';
+import { loadConfig, liquidatorForChain, ChainCfg, AppConfig, TokenInfo } from './infra/config';
 import { executorAddressForChain, privateKeyForChain } from './infra/accounts';
 import { log } from './infra/logger';
-import { counter, gauge } from './infra/metrics';
+import { counter, gauge, histogram } from './infra/metrics';
 import { isThrottled, recordAttempt as recordThrottleAttempt } from './infra/throttle';
 import { ensureAttemptTable, recordAttemptRow } from './infra/attempts';
-import { streamCandidates, type Candidate } from './indexer/aave_indexer';
+import { streamCandidates, type Candidate, pollChainCandidatesOnce } from './indexer/aave_indexer';
 import { oracleDexGapBps, oraclePriceUsd } from './indexer/price_watcher';
-import { simulate } from './simulator/simulate';
+import { simulate, Plan as SimPlan } from './simulator/simulate';
 import { sendLiquidation } from './executor/send_tx';
 import { getPoolFromProvider, logPoolsAtBoot } from './infra/aave_provider';
 import { buildRouteOptions } from './util/routes';
+import { serializeCandidate, serializePlan } from './util/serialize';
+import { lookupAssetPolicy, lookupToken, symbolsEqual } from './util/symbols';
 import { emitAlert } from './infra/alerts';
 import { checkSequencerStatus } from './infra/sequencer';
 import { createChainWatcher } from './realtime/watchers';
+import { shouldPrecommit } from './realtime/oracle_predictor';
+import { isKillSwitchActive, killSwitchPath } from './infra/kill_switch';
 
 const DEFAULT_CLOSE_FACTOR_BPS = 5000;
 const DEFAULT_BONUS_BPS = 800;
 const WAD = 10n ** 18n;
 const SEQUENCER_STALE_SECONDS = 120;
 const SEQUENCER_RECOVERY_GRACE_SECONDS = 120;
+const AUTO_STOP_ON_FAIL_RATE = process.env.FAIL_RATE_AUTO_STOP === '1';
+const INVENTORY_MODE = process.env.INVENTORY_MODE !== '0';
+const INVENTORY_REFRESH_MS = Number(process.env.INVENTORY_REFRESH_MS ?? 10_000);
+
 const AAVE_POOL_ABI = [
   {
     type: 'function',
@@ -42,6 +51,24 @@ const AAVE_POOL_ABI = [
 // --- Global State ---
 const clients = new Map<number, ReturnType<typeof createPublicClient>>();
 const pools = new Map<number, Address>();
+const inventoryCache = new Map<string, { balance: bigint; fetchedAt: number }>();
+
+const ERC20_ABI = [
+  {
+    type: 'function',
+    name: 'balanceOf',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ name: 'amount', type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'decimals',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint8' }],
+  },
+] as const;
 
 // Global counters for overall system monitoring
 let plansReadyCount = 0;
@@ -77,6 +104,28 @@ function publicClient(chain: ChainCfg) {
   return client;
 }
 
+async function inventoryBalance(
+  chain: ChainCfg,
+  token: TokenInfo,
+  contract: Address,
+  client: ReturnType<typeof createPublicClient>
+): Promise<bigint> {
+  const key = `${chain.id}:${token.address.toLowerCase()}`;
+  const now = Date.now();
+  const cached = inventoryCache.get(key);
+  if (cached && now - cached.fetchedAt < INVENTORY_REFRESH_MS) {
+    return cached.balance;
+  }
+  const balance = (await client.readContract({
+    address: token.address as Address,
+    abi: ERC20_ABI,
+    functionName: 'balanceOf',
+    args: [contract],
+  })) as bigint;
+  inventoryCache.set(key, { balance, fetchedAt: now });
+  return balance;
+}
+
 // --- Chain Agent --- 
 
 async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
@@ -86,14 +135,63 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
   const iterator = streamCandidates(cfg)[Symbol.asyncIterator]();
   let subgraphPromise = iterator.next();
   const realtimeWatcher = await createChainWatcher(chain, cfg);
+  let killSwitchNotificationSent = false;
+  // Heartbeat & stall detection state
+  const HEARTBEAT_INTERVAL_MS = Number(process.env.HEARTBEAT_INTERVAL_MS ?? 60_000);
+  const STALL_POLL_INTERVAL_MS = Number(process.env.STALL_POLL_INTERVAL_MS ?? 120_000);
+  let lastActivityMs = Date.now();
+  const startMs = lastActivityMs;
+  function markActivity() { lastActivityMs = Date.now(); }
+  markActivity();
+
+  // Periodic heartbeat & idle fallback poll
+  const heartbeatTimer = setInterval(async () => {
+    const now = Date.now();
+    const idleMs = now - lastActivityMs;
+    const uptimeSec = Math.round((now - startMs) / 1000);
+    try {
+      if (idleMs >= STALL_POLL_INTERVAL_MS) {
+        // Fallback subgraph poll to kick pipeline if everything is quiet
+        const fallback = await pollChainCandidatesOnce(cfg, chain, 250);
+        agentLog.warn({ idleSec: Math.round(idleMs / 1000), fetched: fallback.length, uptimeSec }, 'stall-fallback-poll');
+        for (const cand of fallback) {
+          try {
+            await processCandidate(cand, 'subgraph');
+          } catch (err) {
+            agentLog.debug({ err: (err as Error).message }, 'stall-candidate-error');
+          }
+        }
+        markActivity();
+      } else {
+        agentLog.debug({ uptimeSec, idleSec: Math.round(idleMs / 1000) }, 'heartbeat');
+      }
+    } catch (hbErr) {
+      agentLog.debug({ err: (hbErr as Error).message }, 'heartbeat-error');
+    }
+  }, HEARTBEAT_INTERVAL_MS);
 
   const processCandidate = async (candidate: Candidate, source: 'subgraph' | 'realtime') => {
+    if (isKillSwitchActive()) {
+      if (!killSwitchNotificationSent) {
+        killSwitchNotificationSent = true;
+        const location = killSwitchPath();
+        agentLog.error({ killSwitch: location ?? 'env-only' }, 'kill-switch-engaged-stopping');
+        await emitAlert(
+          'Kill switch engaged',
+          { chain: chain.name, chainId: chain.id, killSwitch: location ?? 'env-only' },
+          'critical'
+        );
+      }
+      process.exit(0);
+      return;
+    }
     // This agent only handles candidates for its own chain
     if (candidate.chainId !== chain.id) {
       return;
     }
 
     counter.candidates.inc({ chain: chain.name });
+  markActivity();
 
     const denyAssets = cfg.risk.denyAssets ?? [];
     if (denyAssets.includes(candidate.debt.symbol) || denyAssets.includes(candidate.collateral.symbol)) {
@@ -103,14 +201,28 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
       return;
     }
 
-    const policy = cfg.assets[candidate.debt.symbol];
-    if (!policy) {
+    const policyEntry = lookupAssetPolicy(cfg.assets, candidate.debt.symbol);
+    if (!policyEntry) {
       agentLog.warn({ asset: candidate.debt.symbol, source }, 'missing-policy');
       return;
     }
+    const policy = policyEntry.value;
+
+  const debtTokenEntry = lookupToken(chain.tokens, candidate.debt.symbol, candidate.debt.address);
+  const collateralTokenEntry = lookupToken(chain.tokens, candidate.collateral.symbol, candidate.collateral.address);
+    if (!debtTokenEntry || !collateralTokenEntry) {
+      agentLog.warn({ candidate, source }, 'token-metadata-missing');
+      return;
+    }
+    const { value: debtToken, key: debtTokenSymbol } = debtTokenEntry;
+    const { value: collateralToken, key: collateralTokenSymbol } = collateralTokenEntry;
 
     const market = cfg.markets.find(
-      (m) => m.enabled && m.chainId === candidate.chainId && m.debtAsset === candidate.debt.symbol && m.collateralAsset === candidate.collateral.symbol
+      (m) =>
+        m.enabled &&
+        m.chainId === candidate.chainId &&
+        symbolsEqual(m.debtAsset, candidate.debt.symbol) &&
+        symbolsEqual(m.collateralAsset, candidate.collateral.symbol)
     );
     if (!market) {
       agentLog.debug({ market: candidate, source }, 'market-disabled');
@@ -137,14 +249,9 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
       return;
     }
 
-    const debtToken = chain.tokens[candidate.debt.symbol];
-    const collateralToken = chain.tokens[candidate.collateral.symbol];
-    if (!debtToken || !collateralToken) {
-      agentLog.warn({ candidate, source }, 'token-metadata-missing');
-      return;
-    }
-
-    try {
+  let candSnapshot!: ReturnType<typeof serializeCandidate>;
+  let plan: SimPlan | null = null;
+  try {
       const throttleLimit = cfg.risk.maxAttemptsPerBorrowerHour ?? 0;
       if (!cfg.risk.dryRun) {
         if (await isThrottled(chain.id, candidate.borrower, throttleLimit)) {
@@ -167,7 +274,15 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
         agentLog.debug({ borrower: candidate.borrower, debt: candidate.debt.symbol, collateral: candidate.collateral.symbol, source }, 'price-missing');
         return;
       }
-      const { options: routeOptions, gapFee, gapRouter } = buildRouteOptions(cfg, chain, candidate.debt.symbol, candidate.collateral.symbol);
+      const nativeToken = chain.tokens.WETH ?? chain.tokens.ETH ?? debtToken;
+      let nativePriceUsd = debtPriceUsd;
+      if (nativeToken) {
+        const nativePrice = await oraclePriceUsd(client, nativeToken);
+        if (nativePrice && nativePrice > 0) {
+          nativePriceUsd = nativePrice;
+        }
+      }
+  const { options: routeOptions, gapFee, gapRouter } = buildRouteOptions(cfg, chain, debtTokenSymbol, collateralTokenSymbol);
       const gap = await oracleDexGapBps({
         client,
         chain,
@@ -176,9 +291,24 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
         fee: gapFee,
         router: gapRouter,
       });
+      candSnapshot = serializeCandidate({
+        candidate,
+        debtToken,
+        collateralToken,
+        debtPriceUsd,
+        collateralPriceUsd: collPriceUsd,
+        gapBps: gap,
+        routeOptions,
+      });
       if (gap > policy.gapCapBps) {
         counter.gapSkip.inc({ chain: chain.name });
-        await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'gap_skip', reason: `gap ${gap}bps` });
+        await recordAttemptRow({
+          chainId: chain.id,
+          borrower: candidate.borrower,
+          status: 'gap_skip',
+          reason: `gap ${gap}bps`,
+          details: { candidate: candSnapshot },
+        });
         agentLog.debug({ borrower: candidate.borrower, gap, source }, 'skip-gap');
         return;
       }
@@ -199,14 +329,21 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
           await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason: 'hf-invalid' });
           return;
         }
-        if (healthFactor >= hfMax) {
-          await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason: `hf ${healthFactor.toFixed(4)}` });
-          agentLog.debug({ borrower: candidate.borrower, healthFactor, hfMax, source }, 'skip-health-factor');
-          return;
-        }
       } catch (hfErr) {
         agentLog.warn({ borrower: candidate.borrower, err: (hfErr as Error).message, source }, 'hf-fetch-failed');
         await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason: 'hf-fetch-failed' });
+        return;
+      }
+
+      const precommitEligible = shouldPrecommit({
+        debtFeed: debtToken.chainlinkFeed,
+        gapBps: candSnapshot.gapBps ?? gap,
+        healthFactor: healthFactor ?? Number.POSITIVE_INFINITY,
+        hfMax,
+      });
+      if ((healthFactor ?? 0) >= hfMax && !precommitEligible) {
+        await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason: `hf ${healthFactor?.toFixed(4)}` });
+        agentLog.debug({ borrower: candidate.borrower, healthFactor, hfMax, source }, 'skip-health-factor');
         return;
       }
 
@@ -218,6 +355,7 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
         routes: routeOptions.map((r) => r.type),
         healthFactor,
         hfMax,
+        precommitEligible,
         source,
         trigger,
       }, 'candidate-considered');
@@ -242,7 +380,8 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
         return;
       }
 
-      const plan = await simulate({
+      const simulateStart = performance.now();
+      plan = await simulate({
         client,
         chain,
         contract,
@@ -258,7 +397,10 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
         policy,
         gasCapUsd: cfg.risk.gasCapUsd,
         maxRepayUsd: cfg.risk.maxRepayUsd,
+        nativePriceUsd,
       });
+      const simulateDurationSeconds = (performance.now() - simulateStart) / 1000;
+      histogram.simulateDuration.observe(simulateDurationSeconds);
       // TODO: branch here for RFQ execution once the contract codec supports RFQ calldata payloads.
 
       if (!plan) {
@@ -280,7 +422,13 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
         if (healthFactor !== null) {
           reason.push(`hf ${healthFactor.toFixed(4)}`);
         }
-        await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason: reason.join(' ') });
+        await recordAttemptRow({
+          chainId: chain.id,
+          borrower: candidate.borrower,
+          status: 'policy_skip',
+          reason: reason.join(' '),
+          details: { candidate: candSnapshot },
+        });
         return;
       }
 
@@ -290,11 +438,60 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
         gauge.hitRate.set(plansSentCount / plansReadyCount);
       }
 
+      plan.precommit = precommitEligible && (healthFactor ?? 0) >= hfMax;
+      if (plan.precommit) {
+        counter.precommitAttempts.inc({ chain: chain.name });
+      }
+
+      if (!cfg.risk.dryRun && INVENTORY_MODE) {
+        try {
+          const contractAddress = contract as Address;
+          const currentBalance = await inventoryBalance(chain, debtToken, contractAddress, client);
+          const normalizedBalance = Number(currentBalance) / Math.pow(10, debtToken.decimals);
+          if (Number.isFinite(normalizedBalance)) {
+            gauge.inventoryBalance
+              .labels({ chain: chain.name, token: candidate.debt.symbol })
+              .set(normalizedBalance);
+          }
+          if (currentBalance >= plan.repayAmount) {
+            plan.mode = 'funds';
+          }
+        } catch (err) {
+          agentLog.warn({ err: (err as Error).message }, 'inventory-balance-failed');
+        }
+      }
+      if (!plan.mode) plan.mode = 'flash';
+
+      const pnlPerGas = plan.gasUsd > 0 ? plan.netUsd / plan.gasUsd : Number.POSITIVE_INFINITY;
+      plan.pnlPerGas = pnlPerGas;
+      gauge.pnlPerGas.set(pnlPerGas);
+
+      const planSnapshot = serializePlan(plan);
       if (cfg.risk.dryRun) {
         counter.plansDryRun.inc({ chain: chain.name });
-        await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'dry_run', reason: `netBps ${plan.estNetBps.toFixed(2)}` });
+        await recordAttemptRow({
+          chainId: chain.id,
+          borrower: candidate.borrower,
+          status: 'dry_run',
+          reason: `netBps ${plan.estNetBps.toFixed(2)}`,
+          details: { candidate: candSnapshot, plan: planSnapshot },
+        });
         agentLog.info({ borrower: candidate.borrower, repay: plan.repayAmount.toString(), netBps: plan.estNetBps, source, trigger }, 'DRY-RUN');
         return;
+      }
+
+      if (cfg.risk.pnlPerGasMin > 0 && plan.gasUsd > 0) {
+        if (pnlPerGas < cfg.risk.pnlPerGasMin) {
+          await recordAttemptRow({
+            chainId: chain.id,
+            borrower: candidate.borrower,
+            status: 'policy_skip',
+            reason: `pnl/gas ${pnlPerGas.toFixed(2)} < ${cfg.risk.pnlPerGasMin}`,
+            details: { candidate: candSnapshot, plan: planSnapshot, pnlPerGas },
+          });
+          agentLog.debug({ borrower: candidate.borrower, pnlPerGas, min: cfg.risk.pnlPerGasMin, source }, 'skip-pnl-per-gas');
+          return;
+        }
       }
 
       const sequencerPreSend = await checkSequencerStatus({
@@ -359,18 +556,43 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
           minProfit,
           amountOutMin: plan.amountOutMin,
           deadline,
+          path: plan.path,
+          mode: plan.mode,
         },
         chain.privtx,
       );
+      if (plan.mode === 'funds') {
+        counter.inventoryExecutions.inc({ chain: chain.name });
+        inventoryCache.delete(`${chain.id}:${debtToken.address.toLowerCase()}`);
+      }
+      if (plan.precommit) {
+        counter.precommitSuccess.inc({ chain: chain.name });
+      }
       counter.plansSent.inc({ chain: chain.name });
       const sentReason = healthFactor !== null ? `hf ${healthFactor.toFixed(4)}` : undefined;
-      await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'sent', reason: sentReason });
+      await recordAttemptRow({
+        chainId: chain.id,
+        borrower: candidate.borrower,
+        status: 'sent',
+        reason: sentReason,
+        txHash,
+        details: { candidate: candSnapshot, plan: planSnapshot, txHash, pnlPerGas },
+      });
       plansSentCount += 1;
       sessionNotionalUsd += plan.repayUsd;
       if (plansReadyCount > 0) {
         gauge.hitRate.set(plansSentCount / plansReadyCount);
       }
-      agentLog.info({ borrower: candidate.borrower, netBps: plan.estNetBps, txHash, repayUsd: plan.repayUsd, sessionNotionalUsd, healthFactor, source, trigger }, 'liquidation-sent');
+      {
+        const attempts = plansSentCount + plansErrorCount;
+        const failureRatio = attempts > 0 ? plansErrorCount / attempts : 0;
+        gauge.failureRate.labels({ chain: chain.name }).set(failureRatio);
+      }
+      if (plan.netUsd > 0) {
+        counter.profitEstimated.inc({ chain: chain.name, mode: plan.mode ?? 'flash' }, plan.netUsd);
+      }
+      agentLog.info({ borrower: candidate.borrower, netBps: plan.estNetBps, txHash, repayUsd: plan.repayUsd, sessionNotionalUsd, healthFactor, source, trigger, mode: plan.mode, precommit: plan.precommit, pnlPerGas }, 'liquidation-sent');
+  markActivity();
 
       if (
         cfg.risk.maxLiveExecutions !== undefined &&
@@ -382,17 +604,26 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
       }
     } catch (err) {
       if (err instanceof Error && err.message === 'HealthFactorNotBelowThreshold') {
-        await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason: 'hf-recovered' });
-        agentLog.debug({ borrower: candidate.borrower, source }, 'skip-hf-recovered');
+        const reason = plan?.precommit ? 'hf-precommit-revert' : 'hf-recovered';
+        await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason, details: plan ? { plan: serializePlan(plan) } : undefined });
+        const logFn = plan?.precommit ? agentLog.info.bind(agentLog) : agentLog.debug.bind(agentLog);
+        logFn({ borrower: candidate.borrower, source, precommit: plan?.precommit }, 'skip-hf-recovered');
         return;
       }
 
       counter.plansError.inc({ chain: chain.name });
       plansErrorCount += 1;
-      await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'error', reason: (err as Error).message });
+      await recordAttemptRow({
+        chainId: chain.id,
+        borrower: candidate.borrower,
+        status: 'error',
+        reason: (err as Error).message,
+        details: candSnapshot ? { candidate: candSnapshot } : { candidate },
+      });
+      const attempts = plansSentCount + plansErrorCount;
+      const ratio = attempts > 0 ? plansErrorCount / attempts : 0;
+      gauge.failureRate.labels({ chain: chain.name }).set(ratio);
       if (!cfg.risk.dryRun) {
-        const attempts = plansSentCount + plansErrorCount;
-        const ratio = attempts > 0 ? plansErrorCount / attempts : 0;
         if (
           attempts >= 5 &&
           cfg.risk.failRateCap > 0 &&
@@ -406,6 +637,10 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
             attempts,
             errors: plansErrorCount,
           }, 'critical');
+          if (AUTO_STOP_ON_FAIL_RATE) {
+            agentLog.error({ ratio, attempts, errors: plansErrorCount }, 'fail-rate-cap-exceeded-auto-stop');
+            process.exit(1);
+          }
         }
       }
       agentLog.error({ err: (err as Error).message, borrower: candidate.borrower, source }, 'candidate-failed');
@@ -450,6 +685,7 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
       }
     }
   } finally {
+    clearInterval(heartbeatTimer);
     realtimeWatcher?.stop();
   }
 }

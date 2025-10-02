@@ -13,11 +13,13 @@ type RouteBuildResult = {
 export function buildRouteOptions(
   cfg: AppConfig,
   chain: ChainCfg,
-  _debtSymbol: string,
-  _collateralSymbol: string
+  debtSymbol: string,
+  collateralSymbol: string
 ): RouteBuildResult {
   const options: RouteOption[] = [];
   const chainDex = cfg.dexRouters?.[chain.id];
+  const debtToken = chain.tokens[debtSymbol];
+  const collateralToken = chain.tokens[collateralSymbol];
 
   if (!chainDex) {
     // Fallback to default UniV3 if no dexRouters are configured for the chain
@@ -35,6 +37,38 @@ export function buildRouteOptions(
   if (uniV3Router) {
     for (const fee of DEFAULT_UNI_FEES) {
       options.push({ type: 'UniV3', router: uniV3Router, fee });
+    }
+  }
+
+  const stableSymbols = new Set(['USDC', 'USDT', 'DAI', 'LUSD', 'SUSD', 'USDC.E', 'USDBC']);
+  const stableToken = chain.tokens.USDC || chain.tokens.USDbC || chain.tokens['USDC.e'];
+  const stableSymbol = stableToken
+    ? Object.entries(chain.tokens).find(([, info]) => info.address.toLowerCase() === stableToken.address.toLowerCase())?.[0] ?? 'USDC'
+    : 'USDC';
+  const wethToken = chain.tokens.WETH ?? chain.tokens.ETH;
+  const wethSymbol = wethToken
+    ? Object.entries(chain.tokens).find(([, info]) => info.address.toLowerCase() === wethToken.address.toLowerCase())?.[0] ?? 'WETH'
+    : 'WETH';
+
+  const multiHopCandidates: Array<{ path: Address[]; fees: number[] }> = [];
+  const pickFee = (a: string, b: string) => (stableSymbols.has(a.toUpperCase()) && stableSymbols.has(b.toUpperCase()) ? 100 : 500);
+
+  if (uniV3Router && debtToken && collateralToken) {
+    if (stableToken && stableToken.address !== debtToken.address && stableToken.address !== collateralToken.address) {
+      multiHopCandidates.push({
+        path: [collateralToken.address as Address, stableToken.address as Address, debtToken.address as Address],
+        fees: [pickFee(collateralSymbol, stableSymbol), pickFee(stableSymbol, debtSymbol)],
+      });
+    }
+    if (wethToken && wethToken.address !== debtToken.address && wethToken.address !== collateralToken.address) {
+      multiHopCandidates.push({
+        path: [collateralToken.address as Address, wethToken.address as Address, debtToken.address as Address],
+        fees: [pickFee(collateralSymbol, wethSymbol), pickFee(wethSymbol, debtSymbol)],
+      });
+    }
+    for (const candidate of multiHopCandidates) {
+      if (new Set(candidate.path.map((addr) => addr.toLowerCase())).size !== candidate.path.length) continue;
+      options.push({ type: 'UniV3Multi', router: uniV3Router, path: candidate.path, fees: candidate.fees });
     }
   }
 

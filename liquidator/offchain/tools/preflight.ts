@@ -1,4 +1,5 @@
 import '../infra/env';
+import fs from 'fs';
 import { Address, createPublicClient, formatEther, formatUnits, getAddress, http, parseEther } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { loadConfig, ChainCfg, TokenInfo, AppConfig } from '../infra/config';
@@ -575,6 +576,19 @@ async function checkContracts(cfg = loadConfig()): Promise<boolean> {
   return ok;
 }
 
+function checkKillSwitchStatus(): boolean {
+  const killPath = process.env.KILL_SWITCH_FILE;
+  if (!killPath) {
+    return true;
+  }
+  if (fs.existsSync(killPath)) {
+    log.warn({ killSwitchFile: killPath }, 'preflight-kill-switch-active');
+    return false;
+  }
+  log.info({ killSwitchFile: killPath }, 'preflight-kill-switch-clear');
+  return true;
+}
+
 async function main() {
   const cfg = loadConfig();
   const results = await Promise.all([
@@ -588,6 +602,8 @@ async function main() {
     checkContracts(cfg),
   ]);
 
+  const killSwitchOk = checkKillSwitchStatus();
+
   if (redis) {
     try {
       await redis.quit();
@@ -597,7 +613,7 @@ async function main() {
     await db.end();
   } catch {}
 
-  const allOk = results.every(Boolean);
+  const allOk = results.every(Boolean) && killSwitchOk;
   if (!allOk) {
     log.error({}, 'preflight-failed');
     process.exit(1);
@@ -606,7 +622,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
   console.error(err);
   process.exit(1);
 });

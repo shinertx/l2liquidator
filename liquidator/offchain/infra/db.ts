@@ -1,5 +1,4 @@
 import { Pool } from 'pg';
-import type { QueryResult, QueryConfig } from 'pg';
 import { instrument } from './instrument';
 
 const dbPool = new Pool({ connectionString: process.env.DATABASE_URL });

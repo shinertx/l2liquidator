@@ -33,6 +33,15 @@ type RouteCacheEntry = {
 const oracleCache = new Map<string, OracleCacheEntry>();
 const routeCache = new Map<string, RouteCacheEntry>();
 
+export function invalidateOracleFeed(feedOrToken: string | TokenInfo) {
+  const key =
+    typeof feedOrToken === 'string'
+      ? feedOrToken.toLowerCase()
+      : (feedOrToken.chainlinkFeed ?? '').toLowerCase();
+  if (!key) return;
+  oracleCache.delete(key);
+}
+
 function cacheKeyOracle(token: TokenInfo): string | undefined {
   if (!token.chainlinkFeed) return undefined;
   return token.chainlinkFeed.toLowerCase();
@@ -57,32 +66,84 @@ async function loadOracleDetail(client: RpcClient, token: TokenInfo): Promise<Or
       args: [],
     })) as number;
 
-    const [roundId, answer, , updatedAt, answeredInRound] = (await client.readContract({
-      address: feed,
-      abi: FEED_ABI,
-      functionName: 'latestRoundData',
-      args: [],
-    })) as [bigint, bigint, bigint, bigint, bigint];
+    try {
+      const [roundId, answer, , updatedAt, answeredInRound] = (await client.readContract({
+        address: feed,
+        abi: FEED_ABI,
+        functionName: 'latestRoundData',
+        args: [],
+      })) as [bigint, bigint, bigint, bigint, bigint];
 
-    const now = BigInt(Math.floor(Date.now() / 1000));
-    const ttlSeconds = BigInt(Math.max(1, Math.floor(ORACLE_TTL_MS / 1000)));
-    const stale =
-      answer <= 0n ||
-      updatedAt === 0n ||
-      now - updatedAt > ttlSeconds ||
-      answeredInRound < roundId;
+      const now = BigInt(Math.floor(Date.now() / 1000));
+      const ttlSeconds = BigInt(Math.max(1, Math.floor(ORACLE_TTL_MS / 1000)));
+      const stale =
+        answer <= 0n ||
+        updatedAt === 0n ||
+        now - updatedAt > ttlSeconds ||
+        answeredInRound < roundId;
 
-    const priceUsd = stale ? null : Number(answer) / 10 ** decimals;
+      const priceUsd = stale ? null : Number(answer) / 10 ** decimals;
 
-    return {
-      feed,
-      priceUsd,
-      decimals,
-      updatedAt: Number(updatedAt),
-      stale,
-      rawAnswer: answer.toString(),
-      answeredInRound: answeredInRound.toString(),
-    };
+      return {
+        feed,
+        priceUsd,
+        decimals,
+        updatedAt: Number(updatedAt),
+        stale,
+        rawAnswer: answer.toString(),
+        answeredInRound: answeredInRound.toString(),
+      };
+    } catch (roundDataErr) {
+      // Some feeds on L2 only expose the legacy AggregatorV2 interface (latestAnswer/latestTimestamp).
+      try {
+        const answer = (await client.readContract({
+          address: feed,
+          abi: LEGACY_FEED_ABI,
+          functionName: 'latestAnswer',
+          args: [],
+        })) as bigint;
+
+        let updatedAt: bigint;
+        let legacyError: string | undefined;
+        try {
+          updatedAt = (await client.readContract({
+            address: feed,
+            abi: LEGACY_FEED_ABI,
+            functionName: 'latestTimestamp',
+            args: [],
+          })) as bigint;
+        } catch (tsErr) {
+          legacyError = tsErr instanceof Error ? tsErr.message : String(tsErr);
+          updatedAt = BigInt(Math.floor(Date.now() / 1000));
+        }
+
+        const now = BigInt(Math.floor(Date.now() / 1000));
+        const ttlSeconds = BigInt(Math.max(1, Math.floor(ORACLE_TTL_MS / 1000)));
+        const stale = answer <= 0n || updatedAt === 0n || now - updatedAt > ttlSeconds;
+        const priceUsd = stale ? null : Number(answer) / 10 ** decimals;
+
+        return {
+          feed,
+          priceUsd,
+          decimals,
+          updatedAt: Number(updatedAt),
+          stale,
+          rawAnswer: answer.toString(),
+          answeredInRound: 'legacy',
+          error:
+            legacyError ?? (roundDataErr instanceof Error ? roundDataErr.message : String(roundDataErr)),
+        };
+      } catch (legacyErr) {
+        return {
+          feed,
+          priceUsd: null,
+          decimals,
+          updatedAt: null,
+          stale: true,
+          error: legacyErr instanceof Error ? legacyErr.message : String(legacyErr),
+        };
+      }
+    }
   } catch (err) {
     return {
       feed,
@@ -195,6 +256,23 @@ const FEED_ABI = [
       { internalType: 'uint256', name: 'updatedAt', type: 'uint256' },
       { internalType: 'uint80', name: 'answeredInRound', type: 'uint80' },
     ],
+  },
+] as const;
+
+const LEGACY_FEED_ABI = [
+  {
+    type: 'function',
+    name: 'latestAnswer',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ internalType: 'int256', name: '', type: 'int256' }],
+  },
+  {
+    type: 'function',
+    name: 'latestTimestamp',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
   },
 ] as const;
 

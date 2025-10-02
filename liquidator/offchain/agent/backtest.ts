@@ -6,7 +6,8 @@ import { executorAddressForChain } from '../infra/accounts';
 import { log } from '../infra/logger';
 import { db } from '../infra/db';
 import { buildRouteOptions } from '../util/routes';
-import { simulate, Plan as SimPlan } from '../simulator/simulate';
+import { lookupAssetPolicy, lookupToken, symbolsEqual } from '../util/symbols';
+import { simulate } from '../simulator/simulate';
 import { oraclePriceUsd } from '../indexer/price_watcher';
 
 const DEFAULT_CLOSE_FACTOR_BPS = 5000;
@@ -48,8 +49,9 @@ function bigIntFromString(value: string | number | bigint): bigint {
 }
 
 function resolvePolicy(config: AppConfig, market: Market | undefined, debtSymbol: string) {
-  const policy = config.assets[debtSymbol];
-  if (!policy) return null;
+  const policyEntry = lookupAssetPolicy(config.assets, debtSymbol);
+  if (!policyEntry) return null;
+  const policy = policyEntry.value;
   const closeFactor = (market?.closeFactorBps ?? DEFAULT_CLOSE_FACTOR_BPS) / 10_000;
   const bonusBps = market?.bonusBps ?? DEFAULT_BONUS_BPS;
   return { policy, closeFactor, bonusBps };
@@ -81,18 +83,6 @@ function getSampleDetails(row: AttemptRow) {
   const candidate = details.candidate;
   if (!candidate) return null;
   return { candidate, baselinePlan: details.plan, status: row.status };
-}
-
-function parseNumber(value: unknown, fallback: number): number {
-  const num = typeof value === 'number' ? value : Number(value);
-  return Number.isFinite(num) ? num : fallback;
-}
-
-function summarizePlan(plan: SimPlan) {
-  return {
-    repayAmount: plan.repayAmount.toString(),
-    estNetBps: plan.estNetBps,
-  };
 }
 
 export async function runBacktest(options: BacktestOptions = {}): Promise<BacktestResult> {
@@ -131,18 +121,20 @@ export async function runBacktest(options: BacktestOptions = {}): Promise<Backte
       failures.push({ borrower: candidate.borrower, chainId: candidate.chainId, reason: 'unknown-chain' });
       continue;
     }
-    const debtToken = chain.tokens[candidate.debt.symbol];
-    const collateralToken = chain.tokens[candidate.collateral.symbol];
-    if (!debtToken || !collateralToken) {
+  const debtTokenEntry = lookupToken(chain.tokens, candidate.debt.symbol, candidate.debt.address);
+  const collateralTokenEntry = lookupToken(chain.tokens, candidate.collateral.symbol, candidate.collateral.address);
+    if (!debtTokenEntry || !collateralTokenEntry) {
       skipped += 1;
       failures.push({ borrower: candidate.borrower, chainId: candidate.chainId, reason: 'missing-token' });
       continue;
     }
+    const { value: debtToken, key: debtTokenSymbol } = debtTokenEntry;
+    const { value: collateralToken, key: collateralTokenSymbol } = collateralTokenEntry;
     const market = config.markets.find(
       (m) =>
         m.chainId === candidate.chainId &&
-        m.debtAsset === candidate.debt.symbol &&
-        m.collateralAsset === candidate.collateral.symbol
+        symbolsEqual(m.debtAsset, candidate.debt.symbol) &&
+        symbolsEqual(m.collateralAsset, candidate.collateral.symbol)
     );
     if (!market || !market.enabled) {
       skipped += 1;
@@ -181,7 +173,20 @@ export async function runBacktest(options: BacktestOptions = {}): Promise<Backte
       continue;
     }
 
-    const routes = buildRouteOptions(config, chain, candidate.debt.symbol, candidate.collateral.symbol).options;
+    const nativeToken = chain.tokens.WETH ?? chain.tokens.ETH ?? debtToken;
+    let nativePriceUsd = debtPrice;
+    if (nativeToken) {
+      try {
+        const maybeNative = await oraclePriceUsd(client, nativeToken);
+        if (maybeNative && maybeNative > 0) {
+          nativePriceUsd = maybeNative;
+        }
+      } catch (err) {
+        console.warn('Failed to load native price', err);
+      }
+    }
+
+  const routes = buildRouteOptions(config, chain, debtTokenSymbol, collateralTokenSymbol).options;
     const plan = await simulate({
       client,
       chain,
@@ -205,6 +210,7 @@ export async function runBacktest(options: BacktestOptions = {}): Promise<Backte
       pricesUsd: { debt: debtPrice, coll: collPrice },
       policy: policyInfo.policy,
       gasCapUsd: config.risk.gasCapUsd,
+      nativePriceUsd,
     });
 
     samples += 1;

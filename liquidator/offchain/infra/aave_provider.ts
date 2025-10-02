@@ -1,6 +1,7 @@
 import { Address, createPublicClient, http, getAddress } from 'viem';
 import type { AppConfig } from './config';
 import { instrument } from './instrument';
+import { log } from './logger';
 
 const PROVIDER_ABI = [
   {
@@ -26,11 +27,9 @@ export async function logPoolsAtBoot(cfg: AppConfig): Promise<void> {
     if (!chain.enabled || !('aaveProvider' in chain) || !chain.aaveProvider) continue;
     try {
       const pool = await getPoolFromProvider(chain.rpc, chain.aaveProvider as Address);
-      // eslint-disable-next-line no-console
-      console.log('[aave] provider', { chainId: chain.id, provider: chain.aaveProvider, pool });
+      log.info({ chainId: chain.id, provider: chain.aaveProvider, pool }, 'aave-provider-pool');
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn('[aave] failed to resolve pool', { chainId: chain.id, provider: chain.aaveProvider, err: (err as Error).message });
+      log.warn({ chainId: chain.id, provider: chain.aaveProvider, err: (err as Error).message }, 'aave-provider-pool-failed');
     }
   }
 }

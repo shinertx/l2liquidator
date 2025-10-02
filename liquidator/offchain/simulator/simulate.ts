@@ -1,5 +1,5 @@
 import type { Address, Chain, PublicClient, Transport } from 'viem';
-import { BaseError, ContractFunctionRevertedError } from 'viem';
+import { BaseError, ContractFunctionRevertedError, encodeFunctionData } from 'viem';
 import { ChainCfg, TokenInfo } from '../infra/config';
 import { bestRoute, RouteOption } from './router';
 import { encodePlan } from '../executor/build_tx';
@@ -21,6 +21,7 @@ export type SimInput = {
   policy: { floorBps: number; gapCapBps: number; slippageBps: number };
   gasCapUsd: number;
   maxRepayUsd?: number;
+  nativePriceUsd: number;
   contract: Address;
   beneficiary: Address;
   executor: Address;
@@ -38,10 +39,41 @@ export type Plan = {
   solidlyFactory?: Address;
   amountOutMin: bigint;
   estNetBps: number;
+  gasUsd: number;
+  path: `0x${string}`;
+  mode?: 'flash' | 'funds';
+  precommit?: boolean;
+  netUsd: number;
+  pnlPerGas?: number;
 };
 
 const HEALTH_FACTOR_ERROR = 'HealthFactorNotBelowThreshold';
 const HEALTH_FACTOR_SELECTOR = '0x930bb771';
+const OP_GAS_PRICE_ORACLE = '0x420000000000000000000000000000000000000F';
+const GAS_PRICE_ORACLE_ABI = [
+  {
+    type: 'function',
+    name: 'getL1Fee',
+    stateMutability: 'view',
+    inputs: [{ name: 'data', type: 'bytes' }],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+] as const;
+
+const ARB_GAS_INFO = '0x000000000000000000000000000000000000006C';
+const ARB_GAS_INFO_ABI = [
+  {
+    type: 'function',
+    name: 'gasEstimateL1Component',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'sender', type: 'address' },
+      { name: 'data', type: 'bytes' },
+      { name: 'contractCreation', type: 'bool' },
+    ],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+] as const;
 
 function toNumber(amount: bigint, decimals: number): number {
   const base = 10n ** BigInt(decimals);
@@ -54,18 +86,26 @@ function applyBps(amount: bigint, bps: number): bigint {
   return (amount * BigInt(bps)) / 10_000n;
 }
 
+type EncodedPlanArgs = Parameters<typeof encodePlan>[0];
+
 async function estimateGas(
   client: RpcClient,
   chain: ChainCfg,
   contract: Address,
   executor: Address,
-  plan: any
-): Promise<number | null> {
+  planArgs: EncodedPlanArgs,
+): Promise<{ totalEth: number; gasEth: number; l1Eth: number } | null> {
   const data = {
     abi: LiquidatorAbi,
     address: contract,
-    ...encodePlan(plan),
+    ...encodePlan(planArgs),
   } as const;
+
+  const calldata = encodeFunctionData({
+    abi: LiquidatorAbi,
+    functionName: data.functionName,
+    args: data.args as any,
+  });
 
   let gas: bigint;
   try {
@@ -78,6 +118,7 @@ async function estimateGas(
         if (errorName === HEALTH_FACTOR_ERROR) {
           return null;
         }
+
         const signature =
           (revert.data as any)?.errorSignature ??
           (revert.data as any)?.signature ??
@@ -85,6 +126,7 @@ async function estimateGas(
         if (signature === HEALTH_FACTOR_SELECTOR) {
           return null;
         }
+
         const raw = (revert.data as any)?.data ?? (revert as any).data;
         if (typeof raw === 'string' && raw.startsWith(HEALTH_FACTOR_SELECTOR)) {
           return null;
@@ -93,6 +135,7 @@ async function estimateGas(
     }
     throw err;
   }
+
   const fees = await client.estimateFeesPerGas();
   const maxFeePerGas = (fees as any).maxFeePerGas as bigint | undefined;
   const gasPrice = (fees as any).gasPrice as bigint | undefined;
@@ -105,8 +148,16 @@ async function estimateGas(
     weiPerGas = await client.getGasPrice();
   }
 
-  const gasEth = Number(weiPerGas) / 1e18 * Number(gas);
-  return gasEth;
+  const gasEth = (Number(weiPerGas) / 1e18) * Number(gas);
+  let l1FeeEth = 0;
+  try {
+    const l1FeeWei = await estimateL1Fee(client, chain.id, executor, calldata);
+    l1FeeEth = Number(l1FeeWei) / 1e18;
+  } catch {
+    // ignore oracle failure; fallback to base gas cost
+  }
+
+  return { totalEth: gasEth + l1FeeEth, gasEth, l1Eth: l1FeeEth };
 }
 
 export async function simulate(input: SimInput): Promise<Plan | null> {
@@ -166,7 +217,7 @@ export async function simulate(input: SimInput): Promise<Plan | null> {
   const minProfit = (repay * BigInt(input.policy.floorBps)) / 10_000n;
   const deadline = BigInt(Math.floor(Date.now() / 1000) + 300);
 
-  const gasEth = await estimateGas(input.client, input.chain, input.contract, input.executor, {
+  const planArgs = {
     borrower: input.borrower,
     debtAsset: input.debt.address,
     collateralAsset: input.collateral.address,
@@ -179,13 +230,17 @@ export async function simulate(input: SimInput): Promise<Plan | null> {
     minProfit,
     amountOutMin: route.amountOutMin,
     deadline,
-  });
+    path: route.path ?? '0x',
+  } satisfies EncodedPlanArgs;
 
-  if (gasEth === null) {
+  const gasEstimate = await estimateGas(input.client, input.chain, input.contract, input.executor, planArgs);
+
+  if (!gasEstimate) {
     return null;
   }
 
-  const gasUsd = gasEth * input.pricesUsd.debt; // Assuming debt is a stablecoin
+  const nativePrice = input.nativePriceUsd > 0 ? input.nativePriceUsd : input.pricesUsd.debt;
+  const gasUsd = gasEstimate.totalEth * nativePrice;
   if (gasUsd > input.gasCapUsd) {
     return null;
   }
@@ -208,5 +263,39 @@ export async function simulate(input: SimInput): Promise<Plan | null> {
     solidlyFactory: route.solidlyFactory,
     amountOutMin: route.amountOutMin,
     estNetBps,
+    gasUsd,
+    path: route.path ?? '0x',
+    netUsd,
   };
+}
+
+async function estimateL1Fee(
+  client: RpcClient,
+  chainId: number,
+  sender: Address,
+  calldata: `0x${string}`,
+): Promise<bigint> {
+  if (chainId === 10 || chainId === 8453) {
+    return (await client.readContract({
+      address: OP_GAS_PRICE_ORACLE,
+      abi: GAS_PRICE_ORACLE_ABI,
+      functionName: 'getL1Fee',
+      args: [calldata],
+    })) as bigint;
+  }
+
+  if (chainId === 42161) {
+    try {
+      return (await client.readContract({
+        address: ARB_GAS_INFO,
+        abi: ARB_GAS_INFO_ABI,
+        functionName: 'gasEstimateL1Component',
+        args: [sender, calldata, false],
+      })) as bigint;
+    } catch {
+      return 0n;
+    }
+  }
+
+  return 0n;
 }

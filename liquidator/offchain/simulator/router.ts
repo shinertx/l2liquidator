@@ -1,4 +1,5 @@
 import type { Chain, PublicClient, Transport } from 'viem';
+import { Buffer } from 'buffer';
 import { Address, getAddress } from 'viem';
 import { ChainCfg, TokenInfo } from '../infra/config';
 
@@ -6,12 +7,14 @@ export const DEX_ID = {
   UNI_V3: 0,
   SOLIDLY_V2: 1,
   UNI_V2: 2,
+  UNI_V3_MULTI: 3,
 } as const;
 
 export type RouteOption =
   | { type: 'UniV3'; router: Address; fee: number }
   | { type: 'SolidlyV2'; router: Address; factory: Address; stable: boolean }
-  | { type: 'UniV2'; router: Address };
+  | { type: 'UniV2'; router: Address }
+  | { type: 'UniV3Multi'; router: Address; path: Address[]; fees: number[] };
 
 export type RouteQuote = {
   dexId: number;
@@ -19,6 +22,8 @@ export type RouteQuote = {
   uniFee?: number;
   solidlyStable?: boolean;
   solidlyFactory?: Address;
+  path?: `0x${string}`;
+  fees?: number[];
   amountOutMin: bigint;
   quotedOut: bigint;
 };
@@ -47,6 +52,27 @@ const QUOTER_ABI = [
       { name: 'amountOut', type: 'uint256' },
       { name: 'sqrtPriceX96After', type: 'uint160' },
       { name: 'initializedTicksCrossed', type: 'uint32' },
+      { name: 'gasEstimate', type: 'uint256' },
+    ],
+  },
+  {
+    name: 'quoteExactInput',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      {
+        name: 'params',
+        type: 'tuple',
+        components: [
+          { name: 'path', type: 'bytes' },
+          { name: 'amountIn', type: 'uint256' },
+        ],
+      },
+    ],
+    outputs: [
+      { name: 'amountOut', type: 'uint256' },
+      { name: 'sqrtPriceX96AfterList', type: 'uint160[]' },
+      { name: 'initializedTicksCrossedList', type: 'uint32[]' },
       { name: 'gasEstimate', type: 'uint256' },
     ],
   },
@@ -87,6 +113,32 @@ const SOLIDLY_ABI = [
   },
 ] as const;
 
+function encodeUniV3Path(tokens: Address[], fees: number[]): `0x${string}` {
+  if (tokens.length !== fees.length + 1) {
+    throw new Error('invalid path');
+  }
+  const parts: number[] = [];
+  for (let i = 0; i < fees.length; i += 1) {
+    const token = tokens[i];
+    const fee = fees[i];
+    const tokenBytes = token.toLowerCase().replace(/^0x/, '');
+    if (tokenBytes.length !== 40) throw new Error('token length');
+    for (let j = 0; j < tokenBytes.length; j += 2) {
+      parts.push(parseInt(tokenBytes.slice(j, j + 2), 16));
+    }
+    const feeHex = fee.toString(16).padStart(6, '0');
+    for (let j = 0; j < feeHex.length; j += 2) {
+      parts.push(parseInt(feeHex.slice(j, j + 2), 16));
+    }
+  }
+  const lastToken = tokens[tokens.length - 1].toLowerCase().replace(/^0x/, '');
+  if (lastToken.length !== 40) throw new Error('token length');
+  for (let j = 0; j < lastToken.length; j += 2) {
+    parts.push(parseInt(lastToken.slice(j, j + 2), 16));
+  }
+  return (`0x${Buffer.from(parts).toString('hex')}`) as `0x${string}`;
+}
+
 async function quoteUniV3(
   client: RpcClient,
   chain: ChainCfg,
@@ -111,6 +163,28 @@ async function quoteUniV3(
   });
   const [amountOut] = result as unknown as [bigint, bigint, number, bigint];
   return amountOut;
+}
+
+async function quoteUniV3Multi(
+  client: RpcClient,
+  chain: ChainCfg,
+  option: Extract<RouteOption, { type: 'UniV3Multi' }>,
+  seizeAmount: bigint
+): Promise<{ quoted: bigint; path: `0x${string}` }> {
+  const encodedPath = encodeUniV3Path(option.path, option.fees);
+  const { result } = await client.simulateContract({
+    address: getAddress(chain.quoter as Address),
+    abi: QUOTER_ABI,
+    functionName: 'quoteExactInput',
+    args: [
+      {
+        path: encodedPath,
+        amountIn: seizeAmount,
+      },
+    ],
+  });
+  const [amountOut] = result as unknown as [bigint, bigint[], number[], bigint];
+  return { quoted: amountOut, path: encodedPath };
 }
 
 async function quoteUniV2(
@@ -180,12 +254,17 @@ export async function bestRoute({
   for (const option of options) {
     try {
       let quoted: bigint;
+      let quotePath: `0x${string}` | undefined;
       if (option.type === 'UniV3') {
         quoted = await quoteUniV3(client, chain, option, collateral, debt, seizeAmount);
       } else if (option.type === 'SolidlyV2') {
         quoted = await quoteSolidlyV2(client, option, collateral, debt, seizeAmount);
-      } else {
+      } else if (option.type === 'UniV2') {
         quoted = await quoteUniV2(client, option, collateral, debt, seizeAmount);
+      } else {
+        const multi = await quoteUniV3Multi(client, chain, option, seizeAmount);
+        quoted = multi.quoted;
+        quotePath = multi.path;
       }
 
       const amountOutMin = (quoted * BigInt(10_000 - slippageBps)) / 10_000n;
@@ -195,11 +274,15 @@ export async function bestRoute({
             ? DEX_ID.UNI_V3
             : option.type === 'SolidlyV2'
             ? DEX_ID.SOLIDLY_V2
-            : DEX_ID.UNI_V2,
+            : option.type === 'UniV2'
+            ? DEX_ID.UNI_V2
+            : DEX_ID.UNI_V3_MULTI,
         router: option.router,
         uniFee: option.type === 'UniV3' ? option.fee : undefined,
         solidlyStable: option.type === 'SolidlyV2' ? option.stable : undefined,
         solidlyFactory: option.type === 'SolidlyV2' ? option.factory : undefined,
+        path: quotePath,
+        fees: option.type === 'UniV3Multi' ? option.fees : undefined,
         amountOutMin,
         quotedOut: quoted,
       };
@@ -207,7 +290,7 @@ export async function bestRoute({
       if (!best || quoted > best.quotedOut) {
         best = quote;
       }
-    } catch (err) {
+    } catch {
       // soft-fail and continue
       continue;
     }

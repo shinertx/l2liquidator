@@ -2,6 +2,7 @@
 src = 'contracts'
 out = 'out'
 libs = ['lib']
+test = 'tests/foundry'
 compiler_version = '0.8.24'
 via-ir = true
 optimizer = true

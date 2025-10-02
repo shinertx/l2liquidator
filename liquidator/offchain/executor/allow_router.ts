@@ -73,6 +73,10 @@ export async function ensureRoutersAllowed({ cfg, chain, contract, pk }: Params)
 
   const client = createPublicClient({ transport: http(chain.rpc) });
   const ownerWallet = wallet(chain.rpc, pk);
+  let nextNonce = await client.getTransactionCount({
+    address: ownerWallet.account.address,
+    blockTag: 'pending',
+  });
 
   for (const router of routers) {
     try {
@@ -96,10 +100,17 @@ export async function ensureRoutersAllowed({ cfg, chain, contract, pk }: Params)
         functionName: 'setRouterAllowed',
         args: [router, true],
         chain: undefined,
+        nonce: nextNonce,
       });
+      nextNonce += 1;
+      await client.waitForTransactionReceipt({ hash });
       log.info({ chain: chain.id, router, hash }, 'router-allow-ok');
     } catch (err) {
       log.error({ chain: chain.id, router, err: (err as Error).message }, 'router-allow-failed');
+      nextNonce = await client.getTransactionCount({
+        address: ownerWallet.account.address,
+        blockTag: 'pending',
+      });
     }
   }
 }

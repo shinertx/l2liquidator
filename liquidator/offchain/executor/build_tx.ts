@@ -13,12 +13,15 @@ export type BuildArgs = {
   minProfit: bigint;
   amountOutMin: bigint;
   deadline: bigint;
+  path?: `0x${string}`;
+  mode?: 'flash' | 'funds';
 };
 
 export function encodePlan(args: BuildArgs) {
-  // ABI for Liquidator.liquidateWithFlash((...))
+  const path = args.path ?? ('0x' as `0x${string}`);
+  const targetFn = args.mode === 'funds' ? 'liquidateWithFunds' : 'liquidateWithFlash';
   return {
-    functionName: 'liquidateWithFlash',
+    functionName: targetFn,
     args: [
       {
         borrower: args.borrower,
@@ -33,6 +36,7 @@ export function encodePlan(args: BuildArgs) {
         minProfit: args.minProfit,
         amountOutMin: args.amountOutMin,
         deadline: args.deadline,
+        path,
       },
     ],
   } as const;

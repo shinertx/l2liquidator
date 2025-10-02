@@ -12,7 +12,7 @@ const CANDIDATES = [
 
 for (const p of CANDIDATES) {
   if (fs.existsSync(p)) {
-  const result = dotenv.config({ path: p, override: true });
+    const result = dotenv.config({ path: p, override: true });
     dotenvExpand.expand(result as any);
     break;
   }
@@ -21,7 +21,6 @@ for (const p of CANDIDATES) {
 // Minimal validation for critical vars (non-fatal warnings only)
 function warn(name: string) {
   if (!process.env[name] || /\$\{.*\}/.test(process.env[name] as string)) {
-    // eslint-disable-next-line no-console
     console.warn(`[env] WARN missing or unexpanded var: ${name}`);
   }
 }

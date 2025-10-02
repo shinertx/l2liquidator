@@ -7,6 +7,7 @@ import { executorAddressForChain } from '../infra/accounts';
 import { oraclePriceUsd } from '../indexer/price_watcher';
 import { simulate } from '../simulator/simulate';
 import { buildRouteOptions } from '../util/routes';
+import { lookupAssetPolicy, lookupToken, symbolsEqual } from '../util/symbols';
 
 import '../infra/env';
 
@@ -72,25 +73,28 @@ async function main() {
       return next;
     })();
 
-    const debtToken = chain.tokens[candidate.debt.symbol];
-    const collateralToken = chain.tokens[candidate.collateral.symbol];
-    if (!debtToken || !collateralToken) {
+  const debtTokenEntry = lookupToken(chain.tokens, candidate.debt.symbol, candidate.debt.address);
+  const collateralTokenEntry = lookupToken(chain.tokens, candidate.collateral.symbol, candidate.collateral.address);
+    if (!debtTokenEntry || !collateralTokenEntry) {
       console.warn('Missing token metadata for candidate', candidate);
       continue;
     }
+    const { value: debtToken, key: debtTokenSymbol } = debtTokenEntry;
+    const { value: collateralToken, key: collateralTokenSymbol } = collateralTokenEntry;
 
-    const policy = cfg.assets[candidate.debt.symbol];
-    if (!policy) {
+    const policyEntry = lookupAssetPolicy(cfg.assets, candidate.debt.symbol);
+    if (!policyEntry) {
       console.warn('Missing policy for asset', candidate.debt.symbol);
       continue;
     }
+    const policy = policyEntry.value;
 
     const market = cfg.markets.find(
       (m) =>
         m.enabled &&
         m.chainId === candidate.chainId &&
-        m.debtAsset === candidate.debt.symbol &&
-        m.collateralAsset === candidate.collateral.symbol
+        symbolsEqual(m.debtAsset, candidate.debt.symbol) &&
+        symbolsEqual(m.collateralAsset, candidate.collateral.symbol)
     );
     if (!market) {
       console.warn('No enabled market for candidate', candidate);
@@ -115,7 +119,16 @@ async function main() {
       continue;
     }
 
-    const { options } = buildRouteOptions(cfg, chain, candidate.debt.symbol, candidate.collateral.symbol);
+    const nativeToken = chain.tokens.WETH ?? chain.tokens.ETH ?? debtToken;
+    let nativePriceUsd = debtPriceUsd;
+    if (nativeToken) {
+      const maybeNative = await oraclePriceUsd(client, nativeToken);
+      if (maybeNative && maybeNative > 0) {
+        nativePriceUsd = maybeNative;
+      }
+    }
+
+  const { options } = buildRouteOptions(cfg, chain, debtTokenSymbol, collateralTokenSymbol);
 
     const plan = await simulate({
       client,
@@ -123,7 +136,7 @@ async function main() {
       contract,
       beneficiary: cfg.beneficiary,
       executor,
-  borrower: candidate.borrower,
+      borrower: candidate.borrower,
       debt: { ...debtToken, symbol: candidate.debt.symbol, amount: toBigInt(candidate.debt.amount) },
       collateral: { ...collateralToken, symbol: candidate.collateral.symbol, amount: toBigInt(candidate.collateral.amount) },
       closeFactor: (market.closeFactorBps ?? 5000) / 10_000,
@@ -132,6 +145,7 @@ async function main() {
       pricesUsd: { debt: debtPriceUsd, coll: collPriceUsd },
       policy,
       gasCapUsd: cfg.risk.gasCapUsd,
+      nativePriceUsd,
     });
 
     ready += 1;

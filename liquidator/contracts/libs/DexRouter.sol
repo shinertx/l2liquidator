@@ -10,7 +10,8 @@ library DexRouter {
     enum Dex {
         UniV3,
         SolidlyV2,
-        UniV2
+        UniV2,
+        UniV3Multi
     }
 
     function _approve(address token, address spender, uint256 amount) private {
@@ -39,6 +40,30 @@ library DexRouter {
                 amountIn: amountIn,
                 amountOutMinimum: amountOutMin,
                 sqrtPriceLimitX96: 0
+            })
+        );
+    }
+
+    function swapUniV3Multi(
+        ISwapRouterV3 router,
+        bytes memory path,
+        uint256 amountIn,
+        uint256 amountOutMin,
+        uint256 deadline
+    ) internal returns (uint256 out) {
+        require(path.length >= 43, "path short");
+        address tokenIn;
+        assembly {
+            tokenIn := shr(96, mload(add(path, 32)))
+        }
+        _approve(tokenIn, address(router), amountIn);
+        out = router.exactInput(
+            ISwapRouterV3.ExactInputParams({
+                path: path,
+                recipient: address(this),
+                deadline: deadline,
+                amountIn: amountIn,
+                amountOutMinimum: amountOutMin
             })
         );
     }

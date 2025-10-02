@@ -22,13 +22,13 @@ contract LiquidatorForkTest is Test {
         forkActive = true;
         vm.createSelectFork(forkUrl);
 
-        address pool = vm.envOr("ARB_AAVE_POOL", address(0x794a61358d6845594F94dC1dB02A252b5B481d05));
+    address pool = vm.envOr("ARB_AAVE_POOL", address(0x794a61358D6845594F94Dc1db02A252B5B481d05));
         address router = vm.envOr("ARB_UNIV3_ROUTER", address(0xE592427A0AEce92De3Edee1F18E0157C05861564));
         address beneficiary = address(0xBEEF);
         liquidator = new Liquidator(pool, router, beneficiary);
     }
 
-    function testBeneficiarySetOnFork() public {
+    function testBeneficiarySetOnFork() public view {
         if (!forkActive) return;
         assertEq(liquidator.beneficiary(), address(0xBEEF));
     }

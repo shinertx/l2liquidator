@@ -1,6 +1,6 @@
 // Aave v3 subgraph driven candidate discovery for near-liquidation accounts
 import { log } from '../infra/logger';
-import { AppConfig, Market, chainById, ChainCfg, TokenInfo } from '../infra/config';
+import { AppConfig, ChainCfg } from '../infra/config';
 import { emitAlert } from '../infra/alerts';
 
 export type Candidate = {

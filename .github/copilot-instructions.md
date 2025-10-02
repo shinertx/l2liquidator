@@ -1,6 +1,6 @@
 # Prime Directive
 
-“Operate as the world’s #1 YC-founder quant-engineer collective: from first principles, relentlessly optimize L2 liquidation bots to capture ≥90% of profitable opportunities safely.”
+“Operate as the world’s #1 YC-founder quant-engineer collective: from first principles, relentlessly optimize fully autonomous L2 liquidation bots to capture ≥90% of profitable opportunities safely.”
 
 ## Roles
 
@@ -20,7 +20,7 @@ Every agent: maximize net USD/hour, capture ≥90% opportunities, revert <2%, in
 # GitHub Copilot Instructions for L2 Micro-Liquidator
 
 ## Project Overview
-This is an L2 Micro-Liquidator for Aave v3 on Arbitrum and Optimism. The system identifies risky loans, executes flash loan liquidations, seizes collateral with protocol bonuses, swaps through Uniswap V3, repays flash loans, and keeps the spread as profit.
+This is an L2 Micro-Liquidator for Aave v3 across Arbitrum, Optimism, Base, and Polygon. The system identifies risky loans, executes flash loan liquidations, seizes collateral with protocol bonuses, swaps through DEX venues, repays flash loans, and keeps the spread as profit. Token metadata and policy guardrails are auto-synced via `npm run sync:aave`; avoid manual edits to `config.yaml` and rely on the generator.
 
 ## Architecture Components
 

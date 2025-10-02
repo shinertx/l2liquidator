@@ -1,4 +1,4 @@
-import { Address, createPublicClient, http } from 'viem';
+import { Address, createPublicClient, http, webSocket } from 'viem';
 import assert from 'assert';
 import type { ChainCfg, AppConfig } from '../infra/config';
 import { log } from '../infra/logger';
@@ -8,11 +8,16 @@ import {
   fetchBorrowerCandidates,
   pollChainCandidatesOnce,
 } from '../indexer/aave_indexer';
+import { invalidateOracleFeed } from '../indexer/price_watcher';
+import { recordFeedUpdate } from './oracle_predictor';
 
 const watchRealtimeEnv = process.env.WATCH_REALTIME;
 const WATCH_FLAG =
   watchRealtimeEnv === undefined ? true : watchRealtimeEnv.toLowerCase() === 'true';
-const POLLING_INTERVAL_MS = 150;
+const BASE_POLL_INTERVAL_MS = Number(process.env.WATCH_POLL_MS ?? 500);
+const MAX_POLL_INTERVAL_MS = Number(process.env.WATCH_MAX_POLL_MS ?? 5_000);
+const RATE_LIMIT_BACKOFF_MS = Number(process.env.WATCH_RATE_LIMIT_BACKOFF_MS ?? 10_000);
+const MAX_RATE_LIMIT_BACKOFF_MS = Number(process.env.WATCH_MAX_RATE_LIMIT_BACKOFF_MS ?? 60_000);
 const BORROWER_DEBOUNCE_MS = 750;
 const PRICE_REFETCH_DEBOUNCE_MS = 2_000;
 
@@ -86,6 +91,16 @@ const AGGREGATOR_ABI = [
       { name: 'roundId', type: 'uint256', indexed: true },
       { name: 'updatedAt', type: 'uint256', indexed: false },
     ],
+  },
+] as const;
+
+const AGGREGATOR_PROXY_ABI = [
+  {
+    type: 'function',
+    name: 'aggregator',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
   },
 ] as const;
 
@@ -179,13 +194,20 @@ class ChainWatcher implements ChainRealtimeWatcher {
   private borrowerSeenAt = new Map<string, number>();
   private lastPriceRefetch = 0;
   private stopped = false;
+  private client?: ReturnType<typeof createPublicClient>;
+  private pool?: Address;
+  private currentPollMs = BASE_POLL_INTERVAL_MS;
+  private backoffMs = RATE_LIMIT_BACKOFF_MS;
+  private rateLimitedUntil = 0;
+  private restartTimer: NodeJS.Timeout | null = null;
+  private lastRateLimitAt = 0;
+  private usingWebSocket = false;
 
   constructor(private chain: ChainCfg, private cfg: AppConfig) {}
 
   async start() {
     if (!WATCH_FLAG) return;
-
-    const client = createPublicClient({ transport: http(this.chain.rpc) });
+    this.client = this.createClient();
     let pool: Address;
     try {
       pool = await getPoolFromProvider(this.chain.rpc, this.chain.aaveProvider);
@@ -194,17 +216,32 @@ class ChainWatcher implements ChainRealtimeWatcher {
       log.warn({ chain: this.chain.id, err: message }, 'realtime-pool-lookup-failed');
       return;
     }
+    this.pool = pool;
+
+    await this.startWatchers();
+  }
+
+  private async startWatchers(): Promise<void> {
+    if (!WATCH_FLAG || this.stopped) return;
+    if (!this.client || !this.pool) return;
+    if (this.unwatchers.length > 0) return;
+
+    this.rateLimitedUntil = 0;
+
+    const client = this.client;
+    const pollingInterval = Math.min(Math.max(this.currentPollMs, BASE_POLL_INTERVAL_MS), MAX_POLL_INTERVAL_MS);
 
     const allowedEvents = new Set(['Borrow', 'Repay', 'Supply', 'Withdraw', 'LiquidationCall']);
 
     const unwatchPool = client.watchContractEvent({
-      address: pool,
+      address: this.pool,
       abi: POOL_EVENTS_ABI,
-      pollingInterval: POLLING_INTERVAL_MS,
+      pollingInterval,
       onError: (err) => {
-        log.warn({ chain: this.chain.id, err: err?.message }, 'realtime-pool-watch-error');
+        this.handleWatcherError('pool', err);
       },
       onLogs: (logs) => {
+        this.onWatcherActivity();
         for (const logItem of logs) {
           const eventName = String(logItem.eventName ?? '');
           if (!allowedEvents.has(eventName)) continue;
@@ -221,32 +258,189 @@ class ChainWatcher implements ChainRealtimeWatcher {
     });
     this.unwatchers.push(unwatchPool);
 
-    const feeds = new Set<string>();
+    const proxyToAgg = new Map<string, string>();
+    const aggregators = new Set<string>();
     for (const token of Object.values(this.chain.tokens ?? {})) {
-      if (token.chainlinkFeed) {
-        feeds.add(token.chainlinkFeed.toLowerCase());
+      const proxy = token.chainlinkFeed?.toLowerCase();
+      if (!proxy) continue;
+      try {
+        const agg = (await client.readContract({
+          address: proxy as Address,
+          abi: AGGREGATOR_PROXY_ABI,
+          functionName: 'aggregator',
+        })) as Address;
+        const aggLc = agg.toLowerCase();
+        proxyToAgg.set(proxy, aggLc);
+        aggregators.add(aggLc);
+      } catch (err) {
+        log.debug({ chain: this.chain.id, feed: proxy, err: (err as Error).message }, 'aggregator-proxy-fallback');
+        proxyToAgg.set(proxy, proxy);
+        aggregators.add(proxy);
       }
     }
 
-    for (const feed of feeds) {
+    for (const aggregator of aggregators) {
       const unwatchFeed = client.watchContractEvent({
-        address: feed as Address,
+        address: aggregator as Address,
         abi: AGGREGATOR_ABI,
         eventName: 'AnswerUpdated',
-        pollingInterval: POLLING_INTERVAL_MS,
+        pollingInterval,
         onError: (err) => {
-          log.warn({ chain: this.chain.id, feed, err: err?.message }, 'realtime-feed-watch-error');
+          this.handleWatcherError('feed', err, { feed: aggregator });
         },
-        onLogs: () => {
+        onLogs: (logs) => {
           const now = Date.now();
           if (now - this.lastPriceRefetch < PRICE_REFETCH_DEBOUNCE_MS) return;
+          let tickTimestamp = now;
+          if (logs.length > 0) {
+            const first = logs[logs.length - 1];
+            const raw = (first.args as any)?.updatedAt ?? (first.args as any)?.[2];
+            if (typeof raw === 'bigint') {
+              const asNumber = Number(raw);
+              if (Number.isFinite(asNumber) && asNumber > 0) {
+                tickTimestamp = asNumber * 1000;
+              }
+            }
+          }
           this.lastPriceRefetch = now;
+          this.onWatcherActivity();
+          for (const [proxy, agg] of proxyToAgg.entries()) {
+            if (agg === aggregator) {
+              invalidateOracleFeed(proxy);
+              recordFeedUpdate(proxy, tickTimestamp);
+            }
+          }
           // TODO: surface price magnitude in trigger so policy can tighten when volatility spikes.
-          void refetchChainCandidates(this.cfg, this.chain, `price:${feed}`, this.queue);
+          void refetchChainCandidates(this.cfg, this.chain, `price:${aggregator}`, this.queue);
         },
       });
       this.unwatchers.push(unwatchFeed);
     }
+  }
+
+  private createClient() {
+    if (this.client) return this.client;
+    if (this.chain.wsRpc) {
+      try {
+        const transport = webSocket(this.chain.wsRpc, {
+          retryCount: Number(process.env.WATCH_WS_RETRY_COUNT ?? 10),
+          retryDelay: Number(process.env.WATCH_WS_RETRY_DELAY_MS ?? 1_000),
+        });
+        const client = createPublicClient({ transport });
+        this.usingWebSocket = true;
+        log.info({ chain: this.chain.id, wsRpc: this.chain.wsRpc }, 'realtime-watch-ws-enabled');
+        return client;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        log.warn({ chain: this.chain.id, err: message, wsRpc: this.chain.wsRpc }, 'realtime-watch-ws-init-failed');
+      }
+    }
+    this.usingWebSocket = false;
+    const fallbackClient = createPublicClient({ transport: http(this.chain.rpc) });
+    if (this.chain.wsRpc) {
+      log.warn({ chain: this.chain.id }, 'realtime-watch-falling-back-http');
+    }
+    return fallbackClient;
+  }
+
+  private onWatcherActivity() {
+    if (this.stopped) return;
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
+    if (Date.now() - this.lastRateLimitAt > this.backoffMs) {
+      this.backoffMs = RATE_LIMIT_BACKOFF_MS;
+    }
+    if (this.currentPollMs > BASE_POLL_INTERVAL_MS) {
+      this.currentPollMs = Math.max(BASE_POLL_INTERVAL_MS, Math.floor(this.currentPollMs / 2));
+    }
+  }
+
+  private handleWatcherError(kind: 'pool' | 'feed', err: unknown, metadata: Record<string, unknown> = {}) {
+    if (this.isRateLimitError(err)) {
+      this.applyRateLimit(kind, metadata);
+      return;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    if (this.isFilterNotFoundError(message)) {
+      log.debug({ chain: this.chain.id, kind, err: message, ...metadata }, 'realtime-watch-filter-stale-restart');
+      this.clearWatchers();
+      void this.startWatchers();
+      return;
+    }
+    if (this.usingWebSocket && message.includes('closed')) {
+      // Attempt to recreate websocket transport once before complaining loudly
+      log.warn({ chain: this.chain.id, kind, err: message }, 'realtime-watch-ws-closed');
+      this.clearWatchers();
+      this.client = undefined;
+      this.client = this.createClient();
+      void this.startWatchers();
+      return;
+    }
+    if (!this.usingWebSocket && message.toLowerCase().includes('resource not found')) {
+      log.warn({ chain: this.chain.id, kind, err: message }, 'realtime-watch-http-unsupported');
+      if (this.chain.wsRpc && !this.usingWebSocket) {
+        this.clearWatchers();
+        this.client = undefined;
+        this.client = this.createClient();
+        void this.startWatchers();
+        return;
+      }
+    }
+    log.warn({ chain: this.chain.id, kind, err: message, ...metadata }, 'realtime-watch-error');
+  }
+
+  private isRateLimitError(err: unknown): boolean {
+    const message = err instanceof Error ? err.message : String(err ?? '');
+    if (!message) return false;
+    return message.includes('429') || /too many requests/i.test(message);
+  }
+
+  private isFilterNotFoundError(message: string): boolean {
+    return /filter not found/i.test(message);
+  }
+
+  private applyRateLimit(kind: 'pool' | 'feed', metadata: Record<string, unknown>) {
+    const now = Date.now();
+    if (now < this.rateLimitedUntil) {
+      return;
+    }
+    this.lastRateLimitAt = now;
+    this.rateLimitedUntil = now + this.backoffMs;
+    log.warn({
+      chain: this.chain.id,
+      kind,
+      pollMs: this.currentPollMs,
+      backoffMs: this.backoffMs,
+      ...metadata,
+    }, 'realtime-rate-limited');
+    this.clearWatchers();
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+    }
+    const delay = this.backoffMs;
+    const nextPoll = Math.min(this.currentPollMs * 2, MAX_POLL_INTERVAL_MS);
+    const nextBackoff = Math.min(this.backoffMs * 2, MAX_RATE_LIMIT_BACKOFF_MS);
+    this.currentPollMs = nextPoll;
+    this.backoffMs = nextBackoff;
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = null;
+      if (this.stopped) return;
+      this.clearWatchers();
+      void this.startWatchers();
+    }, delay);
+  }
+
+  private clearWatchers() {
+    for (const unwatch of this.unwatchers) {
+      try {
+        unwatch();
+      } catch (err) {
+        log.warn({ chain: this.chain.id, err: (err as Error).message }, 'realtime-unwatch-failed');
+      }
+    }
+    this.unwatchers = [];
   }
 
   next(): Promise<RealtimeCandidate> {
@@ -260,14 +454,11 @@ class ChainWatcher implements ChainRealtimeWatcher {
   stop() {
     if (this.stopped) return;
     this.stopped = true;
-    for (const unwatch of this.unwatchers) {
-      try {
-        unwatch();
-      } catch (err) {
-        log.warn({ chain: this.chain.id, err: (err as Error).message }, 'realtime-unwatch-failed');
-      }
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
     }
-    this.unwatchers = [];
+    this.clearWatchers();
     this.queue.shutdown(new Error('realtime watcher stopped'));
   }
 }

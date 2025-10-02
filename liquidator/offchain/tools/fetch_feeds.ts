@@ -21,6 +21,10 @@ const FEED_REGISTRY_ABI = [
 async function main() {
   const cfg = loadConfig();
   for (const chain of cfg.chains.filter((c) => c.enabled)) {
+    if (chain.id !== 1) {
+      console.log(`\nChain ${chain.id} (${chain.name}): skip – feed registry is L1-only`);
+      continue;
+    }
     const client = createPublicClient({ transport: http(chain.rpc) });
     console.log(`\nChain ${chain.id} (${chain.name})`);
     for (const [symbol, token] of Object.entries(chain.tokens)) {

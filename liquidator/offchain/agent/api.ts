@@ -1,7 +1,6 @@
 import '../infra/env';
 import fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { createPublicClient, http } from 'viem';
-import { Address, getAddress } from 'viem';
 
 import { loadConfig, chainById } from '../infra/config';
 import { log } from '../infra/logger';

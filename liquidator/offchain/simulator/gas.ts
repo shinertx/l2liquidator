@@ -1,5 +1,4 @@
 import type { Address, Chain, PublicClient, Transport } from 'viem';
-import { createPublicClient, http } from 'viem';
 
 const FEED_ABI = [
   { type: 'function', name: 'decimals', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint8' }] },

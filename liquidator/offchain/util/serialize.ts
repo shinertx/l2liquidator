@@ -8,6 +8,7 @@ export type RouteSnapshot = {
   router: string;
   fee?: number;
   stable?: boolean;
+  path?: string;
 };
 
 export type CandidateSnapshot = {
@@ -43,11 +44,13 @@ export type PlanSnapshot = {
   solidlyFactory?: string;
   amountOutMin: string;
   estNetBps: number;
+  gasUsd?: number;
+  path?: string;
+  executionMode?: string;
+  precommit?: boolean;
+  netUsd?: number;
+  pnlPerGas?: number;
 };
-
-function bigIntToString(value: bigint | undefined): string | undefined {
-  return typeof value === 'bigint' ? value.toString() : undefined;
-}
 
 export function serializeRoutes(options: RouteOption[]): RouteSnapshot[] {
   return options.map((option) => {
@@ -60,6 +63,13 @@ export function serializeRoutes(options: RouteOption[]): RouteSnapshot[] {
           router: option.router,
           fee: option.stable ? 0 : undefined,
           stable: option.stable,
+        };
+      case 'UniV3Multi':
+        return {
+          type: option.type,
+          router: option.router,
+          path: option.path.join('->'),
+          fee: option.fees?.[0],
         };
       default:
         return { type: option.type, router: option.router };
@@ -112,6 +122,12 @@ export function serializePlan(plan: SimPlan): PlanSnapshot {
     solidlyFactory: plan.solidlyFactory,
     amountOutMin: plan.amountOutMin.toString(),
     estNetBps: plan.estNetBps,
+    gasUsd: plan.gasUsd,
+    path: plan.path,
+    executionMode: plan.mode,
+    precommit: plan.precommit,
+    netUsd: plan.netUsd,
+    pnlPerGas: plan.pnlPerGas,
   };
 }
 

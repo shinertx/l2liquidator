@@ -8,7 +8,7 @@ function clone<T>(value: T): T {
   if (typeof structuredClone === 'function') {
     try {
       return structuredClone(value);
-    } catch (err) {
+    } catch {
       // fall through to JSON method below
     }
   }

@@ -4,7 +4,7 @@ import "forge-std/Test.sol";
 import "../../contracts/Liquidator.sol";
 
 contract LiquidatorTest is Test {
-    function testPlaceholder() public {
+    function testPlaceholder() public pure {
         assertTrue(true);
     }
 }

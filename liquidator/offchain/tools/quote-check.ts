@@ -1,6 +1,6 @@
 import '../infra/env';
 import { Address, createPublicClient, getAddress, http } from 'viem';
-import { loadConfig, chainById, ChainCfg } from '../infra/config';
+import { loadConfig, ChainCfg } from '../infra/config';
 import { log } from '../infra/logger';
 
 const QUOTER_V2_ABI = [
@@ -82,7 +82,6 @@ async function checkChainQuotes(chain: ChainCfg) {
   }
 
   // UniV2/Camelot
-  const camelot = (chain as any).dexRouters?.camelotV2; // likely undefined here; prefer cfg.dexRouters
   // Try pulling from global config dexRouters map
   let uniV2Router: Address | undefined;
   let velodrome: Address | undefined;

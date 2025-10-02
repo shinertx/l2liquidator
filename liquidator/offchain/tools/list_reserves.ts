@@ -1,6 +1,6 @@
 import '../infra/env';
 import { createPublicClient, http } from 'viem';
-import { loadConfig, chainById } from '../infra/config';
+import { loadConfig } from '../infra/config';
 import { getPoolFromProvider } from '../infra/aave_provider';
 
 const ERC20_ABI = [
