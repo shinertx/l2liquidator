@@ -34,3 +34,4 @@ forge-artifacts/
 
 # Process/runtime artifacts
 liquidator/.orchestrator.pid
+liquidator/codebase_dump.txt
