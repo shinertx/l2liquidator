@@ -1,0 +1,54 @@
+groups:
+  - name: founder-ops
+    rules:
+      - alert: HighFailRate
+        expr: |
+          sum by (chain) (rate(plans_error_total[5m]))
+            /
+          clamp_min(sum by (chain) (rate(plans_sent_total[5m]) + rate(plans_error_total[5m])), 0.001)
+            > 0.2
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'High fail rate on chain {{ $labels.chain }}'
+          description: 'Failure ratio {{ $value | printf "%.2f" }} exceeded 20% over the last 5m. Investigate logs and RPC health.'
+
+      - alert: CaptureDrop
+        expr: |
+          (sum by (chain) (increase(plans_ready_total[5m])) > 10)
+            and
+          (sum by (chain) (increase(plans_sent_total[5m])) == bool 0)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'No plans sent on {{ $labels.chain }} despite ready candidates'
+          description: 'More than 10 plans ready in 5m but none sent. Check execution caps, inventory balances, and policy skips.'
+
+      - alert: SequencerDegraded
+        expr: increase(candidates_sequencer_skip_total[2m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Sequencer health degraded on {{ $labels.chain }}'
+          description: 'Sequencer skip counter increasing; investigate L2 sequencer status and pause live executions if needed.'
+
+      - alert: RpcRateLimit429
+        expr: pg_custom_liquidation_attempts_error_bucket_15m{bucket="429_rate_limit"} > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'RPC 429 rate limits detected'
+          description: '{{ $value | printf "%.0f" }} liquidation errors due to RPC 429 in the last 15 minutes. Switch providers or enable private lanes.'
+
+      - alert: MonitoringTargetDown
+        expr: up{job=~"orchestrator|orchestrator-host|postgres-exporter|loki|promtail"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Monitoring target {{ $labels.job }} is down'
+          description: 'Prometheus cannot scrape {{ $labels.instance }}. Restart the service or investigate network/firewall issues.'

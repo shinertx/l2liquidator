@@ -32,6 +32,11 @@ export type CandidateSnapshot = {
   gapBps?: number;
   routeCandidates?: RouteSnapshot[];
   timestamp: number;
+  adaptiveHealthFactorMax?: number;
+  adaptiveGapCapBps?: number;
+  adaptiveGapVolatility?: number;
+  baseHealthFactorMax?: number;
+  baseGapCapBps?: number;
 };
 
 export type PlanSnapshot = {
@@ -50,6 +55,7 @@ export type PlanSnapshot = {
   precommit?: boolean;
   netUsd?: number;
   pnlPerGas?: number;
+  minProfit: string;
 };
 
 export function serializeRoutes(options: RouteOption[]): RouteSnapshot[] {
@@ -85,8 +91,24 @@ export function serializeCandidate(input: {
   collateralPriceUsd?: number;
   gapBps?: number;
   routeOptions?: RouteOption[];
+  adaptive?: {
+    healthFactorMax: number;
+    gapCapBps: number;
+    volatility?: number;
+    baseHealthFactorMax: number;
+    baseGapCapBps: number;
+  };
 }): CandidateSnapshot {
-  const { candidate, debtToken, collateralToken, debtPriceUsd, collateralPriceUsd, gapBps, routeOptions } = input;
+  const {
+    candidate,
+    debtToken,
+    collateralToken,
+    debtPriceUsd,
+    collateralPriceUsd,
+    gapBps,
+    routeOptions,
+    adaptive,
+  } = input;
   return {
     borrower: candidate.borrower,
     chainId: candidate.chainId,
@@ -108,6 +130,11 @@ export function serializeCandidate(input: {
     gapBps,
     routeCandidates: routeOptions ? serializeRoutes(routeOptions) : undefined,
     timestamp: Date.now(),
+    adaptiveHealthFactorMax: adaptive?.healthFactorMax ?? adaptive?.baseHealthFactorMax,
+    adaptiveGapCapBps: adaptive?.gapCapBps ?? adaptive?.baseGapCapBps,
+    adaptiveGapVolatility: adaptive?.volatility,
+    baseHealthFactorMax: adaptive?.baseHealthFactorMax,
+    baseGapCapBps: adaptive?.baseGapCapBps,
   };
 }
 
@@ -128,6 +155,7 @@ export function serializePlan(plan: SimPlan): PlanSnapshot {
     precommit: plan.precommit,
     netUsd: plan.netUsd,
     pnlPerGas: plan.pnlPerGas,
+    minProfit: plan.minProfit.toString(),
   };
 }
 

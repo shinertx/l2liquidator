@@ -1,9 +1,25 @@
 auth_enabled: false
+
 server:
   http_listen_port: 3100
-  http_listen_address: 0.0.0.0
   grpc_listen_port: 0
+
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: inmemory
+  replication_factor: 1
+
 ingester:
+  wal:
+    enabled: true
+    dir: /loki/wal
   lifecycler:
     address: 127.0.0.1
     ring:
@@ -13,9 +29,11 @@ ingester:
   chunk_idle_period: 5m
   chunk_block_size: 262144
   chunk_retain_period: 1m
+
 limits_config:
   ingestion_burst_size_mb: 32
   ingestion_rate_mb: 16
+
 schema_config:
   configs:
     - from: 2020-10-24
@@ -25,15 +43,22 @@ schema_config:
       index:
         prefix: index_
         period: 24h
+
 storage_config:
-  boltdb_shipper:
-    shared_store: filesystem
-    active_index_directory: /loki/index
-    cache_location: /loki/cache
   filesystem:
     directory: /loki/chunks
+  boltdb_shipper:
+    active_index_directory: /loki/index
+    cache_location: /loki/cache
+    shared_store: filesystem
+
+compactor:
+  working_directory: /loki/compactor
+  shared_store: filesystem
+
 chunk_store_config:
   max_look_back_period: 168h
+
 table_manager:
   retention_deletes_enabled: true
   retention_period: 720h

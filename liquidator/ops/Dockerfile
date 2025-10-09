@@ -6,6 +6,7 @@ ENV NODE_ENV=production
 COPY package.json package-lock.json* tsconfig.json ./
 COPY offchain ./offchain
 COPY types ./types
+COPY scripts ./scripts
 
 RUN npm ci --omit=dev
 RUN npm run build
@@ -19,7 +20,10 @@ COPY --from=builder /app/package.json /app/package.json
 COPY --from=builder /app/node_modules /app/node_modules
 COPY --from=builder /app/dist /app/dist
 COPY config.yaml /app/config.yaml
+COPY offchain/tools/inspect_liquidator.js /app/tools/inspect_liquidator.js
+COPY scripts/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 # Metrics
 EXPOSE 9464
-CMD ["node","/app/dist/offchain/orchestrator.js"]
+CMD ["/app/entrypoint.sh"]

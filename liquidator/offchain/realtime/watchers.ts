@@ -1,4 +1,4 @@
-import { Address, createPublicClient, http, webSocket } from 'viem';
+import { Address } from 'viem';
 import assert from 'assert';
 import type { ChainCfg, AppConfig } from '../infra/config';
 import { log } from '../infra/logger';
@@ -10,6 +10,13 @@ import {
 } from '../indexer/aave_indexer';
 import { invalidateOracleFeed } from '../indexer/price_watcher';
 import { recordFeedUpdate } from './oracle_predictor';
+import {
+  disableWebSocket,
+  enableWebSocket,
+  evictRpcClients,
+  getRealtimeClient,
+} from '../infra/rpc_clients';
+import type { ManagedClient } from '../infra/rpc_clients';
 
 const watchRealtimeEnv = process.env.WATCH_REALTIME;
 const WATCH_FLAG =
@@ -194,7 +201,7 @@ class ChainWatcher implements ChainRealtimeWatcher {
   private borrowerSeenAt = new Map<string, number>();
   private lastPriceRefetch = 0;
   private stopped = false;
-  private client?: ReturnType<typeof createPublicClient>;
+  private client?: ManagedClient;
   private pool?: Address;
   private currentPollMs = BASE_POLL_INTERVAL_MS;
   private backoffMs = RATE_LIMIT_BACKOFF_MS;
@@ -202,6 +209,7 @@ class ChainWatcher implements ChainRealtimeWatcher {
   private restartTimer: NodeJS.Timeout | null = null;
   private lastRateLimitAt = 0;
   private usingWebSocket = false;
+  private wsEnableTimer: NodeJS.Timeout | null = null;
 
   constructor(private chain: ChainCfg, private cfg: AppConfig) {}
 
@@ -210,7 +218,7 @@ class ChainWatcher implements ChainRealtimeWatcher {
     this.client = this.createClient();
     let pool: Address;
     try {
-      pool = await getPoolFromProvider(this.chain.rpc, this.chain.aaveProvider);
+      pool = await getPoolFromProvider(this.chain);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       log.warn({ chain: this.chain.id, err: message }, 'realtime-pool-lookup-failed');
@@ -318,29 +326,17 @@ class ChainWatcher implements ChainRealtimeWatcher {
     }
   }
 
-  private createClient() {
-    if (this.client) return this.client;
-    if (this.chain.wsRpc) {
-      try {
-        const transport = webSocket(this.chain.wsRpc, {
-          retryCount: Number(process.env.WATCH_WS_RETRY_COUNT ?? 10),
-          retryDelay: Number(process.env.WATCH_WS_RETRY_DELAY_MS ?? 1_000),
-        });
-        const client = createPublicClient({ transport });
-        this.usingWebSocket = true;
-        log.info({ chain: this.chain.id, wsRpc: this.chain.wsRpc }, 'realtime-watch-ws-enabled');
-        return client;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        log.warn({ chain: this.chain.id, err: message, wsRpc: this.chain.wsRpc }, 'realtime-watch-ws-init-failed');
-      }
+  private createClient(): ManagedClient {
+    const previousMode = this.usingWebSocket ? 'ws' : 'http';
+    const { client, kind } = getRealtimeClient(this.chain);
+    this.usingWebSocket = kind === 'ws';
+    if (kind === 'ws' && previousMode !== 'ws') {
+      log.info({ chain: this.chain.id, wsRpc: this.chain.wsRpc }, 'realtime-watch-ws-enabled');
     }
-    this.usingWebSocket = false;
-    const fallbackClient = createPublicClient({ transport: http(this.chain.rpc) });
-    if (this.chain.wsRpc) {
+    if (kind === 'http' && previousMode === 'ws' && this.chain.wsRpc) {
       log.warn({ chain: this.chain.id }, 'realtime-watch-falling-back-http');
     }
-    return fallbackClient;
+    return client;
   }
 
   private onWatcherActivity() {
@@ -373,7 +369,7 @@ class ChainWatcher implements ChainRealtimeWatcher {
       // Attempt to recreate websocket transport once before complaining loudly
       log.warn({ chain: this.chain.id, kind, err: message }, 'realtime-watch-ws-closed');
       this.clearWatchers();
-      this.client = undefined;
+      evictRpcClients(this.chain.id);
       this.client = this.createClient();
       void this.startWatchers();
       return;
@@ -382,7 +378,7 @@ class ChainWatcher implements ChainRealtimeWatcher {
       log.warn({ chain: this.chain.id, kind, err: message }, 'realtime-watch-http-unsupported');
       if (this.chain.wsRpc && !this.usingWebSocket) {
         this.clearWatchers();
-        this.client = undefined;
+        evictRpcClients(this.chain.id);
         this.client = this.createClient();
         void this.startWatchers();
         return;
@@ -394,7 +390,25 @@ class ChainWatcher implements ChainRealtimeWatcher {
   private isRateLimitError(err: unknown): boolean {
     const message = err instanceof Error ? err.message : String(err ?? '');
     if (!message) return false;
-    return message.includes('429') || /too many requests/i.test(message);
+    const status = this.extractStatusCode(message);
+    if (status === 429) return true;
+    if (status && status >= 500 && status < 600) return true;
+    if (/too many requests/i.test(message)) return true;
+    if (/temporarily unavailable|gateway time-out|cloudflare/i.test(message)) return true;
+    return false;
+  }
+
+  private extractStatusCode(message: string): number | null {
+    const statusMatch = message.match(/status:\s*(\d{3})/i);
+    if (statusMatch) return Number(statusMatch[1]);
+    const httpMatch = message.match(/http\s+(\d{3})/i);
+    if (httpMatch) return Number(httpMatch[1]);
+    const genericMatch = message.match(/\b(5\d{2})\b/);
+    if (genericMatch) {
+      const code = Number(genericMatch[1]);
+      if (Number.isFinite(code) && code >= 500 && code < 600) return code;
+    }
+    return null;
   }
 
   private isFilterNotFoundError(message: string): boolean {
@@ -424,6 +438,20 @@ class ChainWatcher implements ChainRealtimeWatcher {
     const nextBackoff = Math.min(this.backoffMs * 2, MAX_RATE_LIMIT_BACKOFF_MS);
     this.currentPollMs = nextPoll;
     this.backoffMs = nextBackoff;
+
+    const cooldownMs = Math.min(Math.max(this.backoffMs * 3, 30_000), 300_000);
+    disableWebSocket(this.chain.id, cooldownMs);
+    if (this.wsEnableTimer) {
+      clearTimeout(this.wsEnableTimer);
+    }
+    this.wsEnableTimer = setTimeout(() => {
+      this.wsEnableTimer = null;
+      enableWebSocket(this.chain.id);
+    }, cooldownMs);
+
+    evictRpcClients(this.chain.id);
+    this.client = this.createClient();
+
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
       if (this.stopped) return;
@@ -457,6 +485,10 @@ class ChainWatcher implements ChainRealtimeWatcher {
     if (this.restartTimer) {
       clearTimeout(this.restartTimer);
       this.restartTimer = null;
+    }
+    if (this.wsEnableTimer) {
+      clearTimeout(this.wsEnableTimer);
+      this.wsEnableTimer = null;
     }
     this.clearWatchers();
     this.queue.shutdown(new Error('realtime watcher stopped'));

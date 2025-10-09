@@ -1,7 +1,7 @@
 import type { Address, Chain, PublicClient, Transport } from 'viem';
 import { BaseError, ContractFunctionRevertedError, encodeFunctionData } from 'viem';
 import { ChainCfg, TokenInfo } from '../infra/config';
-import { bestRoute, RouteOption } from './router';
+import { quoteRoutes, RouteOption, RouteQuote } from './router';
 import { encodePlan } from '../executor/build_tx';
 import LiquidatorAbi from '../executor/Liquidator.abi.json';
 
@@ -45,11 +45,25 @@ export type Plan = {
   precommit?: boolean;
   netUsd: number;
   pnlPerGas?: number;
+  minProfit: bigint;
 };
 
 const HEALTH_FACTOR_ERROR = 'HealthFactorNotBelowThreshold';
 const HEALTH_FACTOR_SELECTOR = '0x930bb771';
 const OP_GAS_PRICE_ORACLE = '0x420000000000000000000000000000000000000F';
+
+type PlanRejectReason = 'contract_revert';
+
+export class PlanRejectedError extends Error {
+  constructor(
+    public readonly code: PlanRejectReason,
+    message: string,
+    public readonly detail?: { data?: unknown; signature?: string; shortMessage?: string }
+  ) {
+    super(message);
+    this.name = 'PlanRejectedError';
+  }
+}
 const GAS_PRICE_ORACLE_ABI = [
   {
     type: 'function',
@@ -88,6 +102,38 @@ function applyBps(amount: bigint, bps: number): bigint {
 
 type EncodedPlanArgs = Parameters<typeof encodePlan>[0];
 
+const BPS_DENOMINATOR = 10_000n;
+
+function ceilDiv(numerator: bigint, denominator: bigint): bigint {
+  if (denominator === 0n) {
+    throw new Error('division by zero');
+  }
+  if (numerator === 0n) {
+    return 0n;
+  }
+  return (numerator + (denominator - 1n)) / denominator;
+}
+
+function isHealthFactorError(err: ContractFunctionRevertedError | null): boolean {
+  if (!err) return false;
+  const errorName = err.data?.errorName ?? (err as any).errorName;
+  if (errorName === HEALTH_FACTOR_ERROR) {
+    return true;
+  }
+
+  const signature =
+    (err.data as any)?.errorSignature ??
+    (err.data as any)?.signature ??
+    (err as any).signature ??
+    (err as any).data?.slice?.(0, 10);
+  if (signature === HEALTH_FACTOR_SELECTOR) {
+    return true;
+  }
+
+  const raw = (err.data as any)?.data ?? (err as any).data;
+  return typeof raw === 'string' && raw.startsWith(HEALTH_FACTOR_SELECTOR);
+}
+
 async function estimateGas(
   client: RpcClient,
   chain: ChainCfg,
@@ -114,23 +160,15 @@ async function estimateGas(
     if (err instanceof BaseError) {
       const revert = err.walk((error) => error instanceof ContractFunctionRevertedError);
       if (revert instanceof ContractFunctionRevertedError) {
-        const errorName = revert.data?.errorName ?? (revert as any).errorName;
-        if (errorName === HEALTH_FACTOR_ERROR) {
+        if (isHealthFactorError(revert)) {
           return null;
         }
-
-        const signature =
-          (revert.data as any)?.errorSignature ??
-          (revert.data as any)?.signature ??
-          (revert as any).signature;
-        if (signature === HEALTH_FACTOR_SELECTOR) {
-          return null;
-        }
-
-        const raw = (revert.data as any)?.data ?? (revert as any).data;
-        if (typeof raw === 'string' && raw.startsWith(HEALTH_FACTOR_SELECTOR)) {
-          return null;
-        }
+        const shortMessage = (revert as any).shortMessage ?? revert.message;
+        throw new PlanRejectedError('contract_revert', shortMessage, {
+          data: (revert as any).data,
+          signature: (revert as any).signature,
+          shortMessage,
+        });
       }
     }
     throw err;
@@ -160,19 +198,37 @@ async function estimateGas(
   return { totalEth: gasEth + l1FeeEth, gasEth, l1Eth: l1FeeEth };
 }
 
+const SIM_DEBUG = process.env.SIM_DEBUG === '1';
+
 export async function simulate(input: SimInput): Promise<Plan | null> {
+  const debugReasons: Array<{ stage: string; detail?: unknown }> = SIM_DEBUG ? [] : [];
+
   if (input.pricesUsd.debt <= 0 || input.pricesUsd.coll <= 0) {
+    if (SIM_DEBUG) debugReasons.push({ stage: 'price-invalid', detail: input.pricesUsd });
+    if (SIM_DEBUG) console.debug('simulate: abort', debugReasons);
     return null;
   }
 
   const cfBps = Math.floor(input.closeFactor * 10_000);
-  if (cfBps <= 0) return null;
+  if (cfBps <= 0) {
+    if (SIM_DEBUG) debugReasons.push({ stage: 'close-factor-nonpositive', detail: cfBps });
+    if (SIM_DEBUG) console.debug('simulate: abort', debugReasons);
+    return null;
+  }
 
   let repay = applyBps(input.debt.amount, cfBps);
-  if (repay === 0n) return null;
+  if (repay === 0n) {
+    if (SIM_DEBUG) debugReasons.push({ stage: 'repay-zero' });
+    if (SIM_DEBUG) console.debug('simulate: abort', debugReasons);
+    return null;
+  }
 
   const pow10 = Math.pow(10, input.debt.decimals);
-  if (!Number.isFinite(pow10) || pow10 <= 0) return null;
+  if (!Number.isFinite(pow10) || pow10 <= 0) {
+    if (SIM_DEBUG) debugReasons.push({ stage: 'pow10-invalid', detail: pow10 });
+    if (SIM_DEBUG) console.debug('simulate: abort', debugReasons);
+    return null;
+  }
 
   const toTokensNumber = (amount: bigint) => toNumber(amount, input.debt.decimals);
   let repayTokens = toTokensNumber(repay);
@@ -180,18 +236,34 @@ export async function simulate(input: SimInput): Promise<Plan | null> {
 
   if (input.maxRepayUsd !== undefined && input.maxRepayUsd > 0 && repayUsd > input.maxRepayUsd) {
     const maxRepayTokens = input.maxRepayUsd / input.pricesUsd.debt;
-    if (!Number.isFinite(maxRepayTokens) || maxRepayTokens <= 0) return null;
+    if (!Number.isFinite(maxRepayTokens) || maxRepayTokens <= 0) {
+      if (SIM_DEBUG) debugReasons.push({ stage: 'max-repay-invalid', detail: maxRepayTokens });
+      if (SIM_DEBUG) console.debug('simulate: abort', debugReasons);
+      return null;
+    }
     const maxRepayAmount = BigInt(Math.floor(maxRepayTokens * pow10));
-    if (maxRepayAmount <= 0n) return null;
+    if (maxRepayAmount <= 0n) {
+      if (SIM_DEBUG) debugReasons.push({ stage: 'max-repay-amount-nonpositive', detail: maxRepayAmount });
+      if (SIM_DEBUG) console.debug('simulate: abort', debugReasons);
+      return null;
+    }
     repay = maxRepayAmount < repay ? maxRepayAmount : repay;
     repayTokens = toTokensNumber(repay);
     repayUsd = repayTokens * input.pricesUsd.debt;
-    if (repay <= 0n || repayUsd <= 0) return null;
+    if (repay <= 0n || repayUsd <= 0) {
+      if (SIM_DEBUG) debugReasons.push({ stage: 'repay-after-cap-nonpositive', detail: { repay, repayUsd } });
+      if (SIM_DEBUG) console.debug('simulate: abort', debugReasons);
+      return null;
+    }
   }
 
   const bonusFactor = 1 + input.bonusBps / 10_000;
   const seizeUsd = repayUsd * bonusFactor;
-  if (seizeUsd <= 0) return null;
+  if (seizeUsd <= 0) {
+    if (SIM_DEBUG) debugReasons.push({ stage: 'seize-usd-nonpositive', detail: seizeUsd });
+    if (SIM_DEBUG) console.debug('simulate: abort', debugReasons);
+    return null;
+  }
 
   const seizeTokens = seizeUsd / input.pricesUsd.coll;
   const seizeAmount = (() => {
@@ -200,11 +272,26 @@ export async function simulate(input: SimInput): Promise<Plan | null> {
     const raw = BigInt(Math.floor(seizeTokens * seizePow));
     return raw > input.collateral.amount ? input.collateral.amount : raw;
   })();
-  if (seizeAmount === 0n) return null;
+  if (seizeAmount === 0n) {
+    if (SIM_DEBUG) debugReasons.push({ stage: 'seize-amount-zero' });
+    if (SIM_DEBUG) console.debug('simulate: abort', debugReasons);
+    return null;
+  }
 
-  const route = await bestRoute({
+  const floorBps = BigInt(input.policy.floorBps);
+  const minProfit = floorBps > 0n ? ceilDiv(repay * floorBps, BPS_DENOMINATOR) : 0n;
+  if (minProfit === 0n) {
+    if (SIM_DEBUG) debugReasons.push({ stage: 'min-profit-zero', detail: { repay, floorBps } });
+    if (SIM_DEBUG) console.debug('simulate: abort', debugReasons);
+    return null;
+  }
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + 300);
+
+  const nativePrice = input.nativePriceUsd > 0 ? input.nativePriceUsd : input.pricesUsd.debt;
+  const quotes = await quoteRoutes({
     client: input.client,
     chain: input.chain,
+    contract: input.contract,
     collateral: input.collateral,
     debt: input.debt,
     seizeAmount,
@@ -212,60 +299,85 @@ export async function simulate(input: SimInput): Promise<Plan | null> {
     options: input.routes,
   });
 
-  if (!route) return null;
-
-  const minProfit = (repay * BigInt(input.policy.floorBps)) / 10_000n;
-  const deadline = BigInt(Math.floor(Date.now() / 1000) + 300);
-
-  const planArgs = {
-    borrower: input.borrower,
-    debtAsset: input.debt.address,
-    collateralAsset: input.collateral.address,
-    repayAmount: repay,
-    dexId: route.dexId,
-    router: route.router,
-    uniFee: route.uniFee ?? 0,
-    solidlyStable: route.solidlyStable,
-    solidlyFactory: route.solidlyFactory,
-    minProfit,
-    amountOutMin: route.amountOutMin,
-    deadline,
-    path: route.path ?? '0x',
-  } satisfies EncodedPlanArgs;
-
-  const gasEstimate = await estimateGas(input.client, input.chain, input.contract, input.executor, planArgs);
-
-  if (!gasEstimate) {
+  if (quotes.length === 0) {
+    if (SIM_DEBUG) debugReasons.push({ stage: 'no-quotes' });
+    if (SIM_DEBUG) console.debug('simulate: abort', debugReasons);
     return null;
   }
 
-  const nativePrice = input.nativePriceUsd > 0 ? input.nativePriceUsd : input.pricesUsd.debt;
-  const gasUsd = gasEstimate.totalEth * nativePrice;
-  if (gasUsd > input.gasCapUsd) {
-    return null;
+  let best: { route: RouteQuote; gasUsd: number; netUsd: number; estNetBps: number } | null = null;
+
+  for (const route of quotes) {
+    const planArgs = {
+      borrower: input.borrower,
+      debtAsset: input.debt.address,
+      collateralAsset: input.collateral.address,
+      repayAmount: repay,
+      dexId: route.dexId,
+      router: route.router,
+      uniFee: route.uniFee ?? 0,
+      solidlyStable: route.solidlyStable,
+      solidlyFactory: route.solidlyFactory,
+      minProfit,
+      amountOutMin: route.amountOutMin,
+      deadline,
+      path: route.path ?? '0x',
+    } satisfies EncodedPlanArgs;
+
+    const gasEstimate = await estimateGas(input.client, input.chain, input.contract, input.executor, planArgs);
+    if (!gasEstimate) {
+      if (SIM_DEBUG) debugReasons.push({ stage: 'estimate-gas-null', detail: { dexId: route.dexId } });
+      continue;
+    }
+
+    const gasUsd = gasEstimate.totalEth * nativePrice;
+    if (gasUsd > input.gasCapUsd) {
+      if (SIM_DEBUG) debugReasons.push({ stage: 'gas-cap', detail: { gasUsd, gasCap: input.gasCapUsd } });
+      continue;
+    }
+
+    const proceedsUsd = toNumber(route.amountOutMin, input.debt.decimals) * input.pricesUsd.debt;
+    const costsUsd = repayUsd + gasUsd;
+    const netUsd = proceedsUsd - costsUsd;
+    const estNetBps = repayUsd > 0 ? (netUsd / repayUsd) * 10_000 : 0;
+    if (estNetBps < input.policy.floorBps) {
+      if (SIM_DEBUG) debugReasons.push({ stage: 'floor-bps', detail: { estNetBps, floorBps: input.policy.floorBps } });
+      continue;
+    }
+
+    if (!best || netUsd > best.netUsd) {
+      best = { route, gasUsd, netUsd, estNetBps };
+    }
   }
 
-  const proceedsUsd = toNumber(route.amountOutMin, input.debt.decimals) * input.pricesUsd.debt;
-  const costsUsd = repayUsd + gasUsd;
-  const netUsd = proceedsUsd - costsUsd;
-  const estNetBps = repayUsd > 0 ? (netUsd / repayUsd) * 10_000 : 0;
-
-  if (estNetBps < input.policy.floorBps) return null;
+  if (!best) {
+    if (SIM_DEBUG) {
+      console.debug('simulate: no-plan', {
+        repayUsd,
+        minProfit: Number(minProfit) / Math.pow(10, input.debt.decimals),
+        floorBps: input.policy.floorBps,
+        gasCapUsd: input.gasCapUsd,
+        debugReasons,
+      });
+    }
+    return null;
+  }
 
   return {
     repayAmount: repay,
     seizeAmount,
     repayUsd,
-    dexId: route.dexId,
-    router: route.router,
-    uniFee: route.uniFee ?? 0,
-    solidlyStable: route.solidlyStable,
-    solidlyFactory: route.solidlyFactory,
-    amountOutMin: route.amountOutMin,
-    estNetBps,
-    gasUsd,
-    path: route.path ?? '0x',
-    netUsd,
+    dexId: best.route.dexId,
+    router: best.route.router,
+    uniFee: best.route.uniFee ?? 0,
+    solidlyStable: best.route.solidlyStable,
+    solidlyFactory: best.route.solidlyFactory,
+    amountOutMin: best.route.amountOutMin,
+    estNetBps: best.estNetBps,
+    gasUsd: best.gasUsd,
+    path: best.route.path ?? '0x',
+    netUsd: best.netUsd,
+    minProfit,
   };
 }
 

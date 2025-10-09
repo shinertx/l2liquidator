@@ -1,4 +1,4 @@
-import { Address, createPublicClient, http } from 'viem';
+import { Address, createPublicClient, getAddress, http } from 'viem';
 import { wallet } from './mev_protect';
 import { AppConfig, ChainCfg } from '../infra/config';
 import { buildRouteOptions } from '../util/routes';
@@ -32,38 +32,40 @@ type Params = {
 };
 
 function collectRouters(cfg: AppConfig, chain: ChainCfg): Address[] {
-  const routers = new Set<Address>();
+  const routers = new Set<string>();
+
+  const addIfValid = (val: unknown) => {
+    if (typeof val !== 'string') return;
+    if (!val.startsWith('0x') || val.length !== 42) return;
+    try {
+      const chk = getAddress(val as Address);
+      routers.add(chk);
+    } catch {
+      // skip invalid checksum/address
+    }
+  };
 
   for (const market of cfg.markets) {
     if (!market.enabled || market.chainId !== chain.id) continue;
     const { options } = buildRouteOptions(cfg, chain, market.debtAsset, market.collateralAsset);
     for (const option of options) {
-      routers.add(option.router);
+      addIfValid(option.router);
     }
   }
 
   const dex = cfg.dexRouters?.[chain.id];
-  const pushMaybe = (value: unknown) => {
-    if (typeof value !== 'string') return;
-    if (!value.startsWith('0x') || value.length !== 42) return;
-    routers.add(value as Address);
-  };
-
+  // Only include known router address fields; ignore tokens/factories/etc.
   if (dex) {
-    for (const value of Object.values(dex)) {
-      if (typeof value === 'object' && value !== null) {
-        for (const nested of Object.values(value)) {
-          pushMaybe(nested);
-        }
-      } else {
-        pushMaybe(value);
-      }
+    const knownRouterKeys = ['uniV3', 'camelotV2', 'velodrome', 'aerodrome'] as const;
+    for (const k of knownRouterKeys) {
+      const v = (dex as any)[k];
+      addIfValid(v);
     }
   }
 
-  pushMaybe(chain.uniV3Router);
+  addIfValid(chain.uniV3Router);
 
-  return Array.from(routers);
+  return Array.from(routers) as Address[];
 }
 
 export async function ensureRoutersAllowed({ cfg, chain, contract, pk }: Params): Promise<void> {

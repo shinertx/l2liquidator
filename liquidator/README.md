@@ -10,7 +10,7 @@ npm i
 forge install
 ```
 2) **Configure**
-- Copy `.env.sample` → `.env` and fill the RPC + WS endpoints and private keys for Arbitrum, Optimism, Base, and Polygon (we spin up all four agents once their contracts are deployed).
+- Copy `.env.sample` → `.env` and fill the RPC + WS endpoints, private keys, and Safe owner addresses for Arbitrum, Optimism, Base, and Polygon (we spin up all four agents once their contracts are deployed).
 - Add your The Graph Gateway key (`GRAPH_API_KEY`) and set any `AAVE_V3_SUBGRAPH_*` overrides in `.env` if you use hosted subgraphs.
 - Copy `config.example.yaml` → `config.yaml`, record your liquidator contract address for **every** chain under `contracts.liquidator[chainId]`, and review the markets before enabling them.
 
@@ -32,7 +32,17 @@ forge create --rpc-url $RPC_ARB --private-key $WALLET_PK_ARB contracts/Liquidato
  --constructor-args $AAVE_POOL_ARB $UNI_V3_ROUTER_ARB $BENEFICIARY
 ```
 
-6) **Run orchestrator (shadow mode)**
+6) **Boot adaptive risk engine & analytics loop (recommended)**
+   - Set `RISK_ENGINE_URL` in `.env` (defaults to `http://localhost:4010`) so both the orchestrator and analytics loop can reach the service.
+```bash
+npm run risk-engine
+```
+   - In another terminal, start the analytics feedback loop so it can stream attempt data back to the risk engine:
+```bash
+npm run analytics:perf
+```
+
+7) **Run orchestrator (shadow mode)**
 ```bash
 npm run dev
 ```
@@ -42,15 +52,16 @@ npm run dev
 ./scripts/dev_env.sh
 ```
 
-7) **Go live (canary)**: enable 1–2 markets in `config.yaml` with high `minProfit`, tight `slippageBps`, `gapCapBps`.
+8) **Go live (canary)**: enable 1–2 markets in `config.yaml` with high `minProfit`, tight `slippageBps`, `gapCapBps`.
 
 **Not legal/financial advice. Use at your own risk.**
 
 ### Monitoring & dashboards
 
-- **Prometheus & Grafana**: `docker-compose up grafana prometheus loki promtail` spins up a pre-wired stack. Visit `http://localhost:3000` (default `admin`/`admin`) to view the “Founder Ops” dashboard. The board runs fine in the Grafana mobile app for quick checks.
-- **Metrics**: key Prometheus series include `profit_estimated_total_usd`, `plans_failure_rate`, `inventory_balance`, `simulate_duration_seconds`, and `plans_sent_total` (all tagged by chain/mode).
-- **Logs**: promtail tails orchestrator logs into Loki (`http://localhost:3100`). Use the dashboard’s “Recent Activity” panel or Grafana Explore to query `mode`, `precommit`, `chain`, and failure reasons on demand.
+- **Lint first**: `make verify-monitoring` runs `promtool`/`amtool` checks on the Prometheus and Alertmanager configs before you redeploy.
+- **Bring the stack up**: `docker compose up -d postgres-exporter prometheus alertmanager loki promtail grafana` (start `worker` too if you want the in-compose orchestrator). Grafana lives at `http://localhost:3000` with `admin / uBBybxx3s@Bn7M`; the “Founder Ops” dashboard loads automatically.
+- **Metrics**: Prometheus now scrapes both the compose worker (`worker:9464`) and a locally running orchestrator via `host.docker.internal:9464`, so dry-run canaries and live runs share the same charts. Keep an eye on `profit_estimated_total_usd`, `plans_failure_rate`, `candidates_gap_skip_total`, `simulate_duration_seconds`, `send_latency_seconds`, and `rpc_errors_total{target=…}`.
+- **Logs**: promtail ships container logs plus the repo `logs/` directory (dry-run bundles and `live.log`) into Loki (`http://localhost:3100`). Use the dashboard’s WARN+/ERROR panel or Grafana Explore for deeper queries.
 - **Kill switch**: create the file specified by `KILL_SWITCH_FILE` to halt all agents instantly. Preflight now warns if the file exists.
 
 ### Persistent observability

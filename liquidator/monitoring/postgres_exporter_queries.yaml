@@ -1,0 +1,66 @@
+# Custom queries for prometheus-community/postgres-exporter
+# Surface liquidation attempt telemetry for dashboards & alerts.
+liquidation_attempts_status_24h:
+  query: |
+    SELECT status, COUNT(*) AS count
+    FROM liquidation_attempts
+    WHERE created_at >= now() - interval '24 hours'
+    GROUP BY status;
+  metrics:
+    - status:
+        usage: "LABEL"
+        description: "Attempt status"
+    - count:
+        usage: "GAUGE"
+        description: "Attempts in the last 24 hours"
+
+liquidation_attempts_gap_reason_24h:
+  query: |
+    SELECT
+      COALESCE(NULLIF(SUBSTRING(reason FROM 1 FOR 24), ''), 'unknown') AS reason,
+      COUNT(*) AS count
+    FROM liquidation_attempts
+    WHERE status = 'gap_skip'
+      AND created_at >= now() - interval '24 hours'
+    GROUP BY reason
+    ORDER BY count DESC
+    LIMIT 25;
+  metrics:
+    - reason:
+        usage: "LABEL"
+        description: "Gap skip reason (truncated)"
+    - count:
+        usage: "GAUGE"
+        description: "Gap skips in the last 24 hours"
+
+liquidation_attempts_error_bucket_15m:
+  query: |
+    SELECT
+      CASE
+        WHEN reason ILIKE '%too many requests%' OR reason ILIKE '%429%' THEN '429_rate_limit'
+        WHEN reason ILIKE '%timeout%' THEN 'timeout'
+        WHEN reason ILIKE '%sequencer%' THEN 'sequencer'
+        ELSE 'other'
+      END AS bucket,
+      COUNT(*) AS count
+    FROM liquidation_attempts
+    WHERE status = 'error'
+      AND created_at >= now() - interval '15 minutes'
+    GROUP BY bucket;
+  metrics:
+    - bucket:
+        usage: "LABEL"
+        description: "Error bucket"
+    - count:
+        usage: "GAUGE"
+        description: "Errors in the last 15 minutes"
+
+liquidation_attempts_recent_rows:
+  query: |
+    SELECT COUNT(*) AS count
+    FROM liquidation_attempts
+    WHERE created_at >= now() - interval '5 minutes';
+  metrics:
+    - count:
+        usage: "GAUGE"
+        description: "Attempt rows inserted in the last 5 minutes"

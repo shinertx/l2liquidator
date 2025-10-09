@@ -1,6 +1,6 @@
 import '../infra/env';
 import fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import { createPublicClient, http } from 'viem';
+import { Address, createPublicClient, http } from 'viem';
 
 import { loadConfig, chainById } from '../infra/config';
 import { log } from '../infra/logger';
@@ -162,6 +162,7 @@ app.get('/quotes', async (req: FastifyRequest, reply: FastifyReply) => {
         const result = await bestRoute({
           client,
           chain,
+          contract: cfg.contracts!.liquidator![chain.id] as Address,
           collateral: collateralToken,
           debt: debtToken,
           seizeAmount: amountIn,
@@ -185,6 +186,7 @@ app.get('/quotes', async (req: FastifyRequest, reply: FastifyReply) => {
   const best = await bestRoute({
     client,
     chain,
+    contract: cfg.contracts!.liquidator![chain.id] as Address,
     collateral: collateralToken,
     debt: debtToken,
     seizeAmount: amountIn,

@@ -52,14 +52,15 @@ export function lookupToken(
   symbol: string | null | undefined,
   address: string | null | undefined = undefined,
 ): SymbolLookupResult<TokenInfo> | undefined {
-  const bySymbol = lookupBySymbol(table, symbol);
-  if (bySymbol) return bySymbol;
-  if (!address) return undefined;
-  const normalizedAddress = address.toLowerCase();
-  for (const [key, value] of Object.entries(table)) {
-    if (value.address.toLowerCase() === normalizedAddress) {
-      return { key, value };
+  if (address) {
+    const normalizedAddress = address.toLowerCase();
+    for (const [key, value] of Object.entries(table)) {
+      if (value.address.toLowerCase() === normalizedAddress) {
+        return { key, value };
+      }
     }
   }
+  const bySymbol = lookupBySymbol(table, symbol);
+  if (bySymbol) return bySymbol;
   return undefined;
 }

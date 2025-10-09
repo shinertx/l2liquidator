@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Allow-list routers for a given chain (arb|op)
+# Allow-list routers for a given chain (arb|op|polygon|base)
 # Requires .env and LIQUIDATOR address exported or provided via --liquidator
 
-usage() { echo "Usage: $0 <arb|op> --liquidator 0x..." >&2; exit 1; }
+usage() { echo "Usage: $0 <arb|op|polygon|base> --liquidator 0x..." >&2; exit 1; }
 
 if [ $# -lt 2 ]; then usage; fi
 
@@ -39,7 +39,25 @@ case "$CHAIN" in
     export UNIV3_ROUTER="${OP_UNIV3_ROUTER:-}"
     export SECONDARY_ROUTER1="${OP_VELODROME_ROUTER:-}"
     ;;
-  *) echo "Unsupported chain: $CHAIN (use arb|op)" >&2; exit 1 ;;
+  polygon)
+    RPC="${RPC_POLYGON:-}"
+   PRIVATE_KEY_VAL="${WALLET_PK_POLYGON:-}"
+    export UNIV3_ROUTER="${POLYGON_UNIV3_ROUTER:-}"
+    export SECONDARY_ROUTER1="${POLYGON_SECONDARY_ROUTER:-}"
+    ;;
+  eth|mainnet)
+    RPC="${RPC_ETH:-}"
+    PRIVATE_KEY_VAL="${WALLET_PK_ETH:-}"
+    export UNIV3_ROUTER="${ETH_UNIV3_ROUTER:-0xE592427A0AEce92De3Edee1F18E0157C05861564}"
+    export SECONDARY_ROUTER1="${ETH_SECONDARY_ROUTER:-}"
+    ;;
+  base)
+    RPC="${RPC_BASE:-}"
+    PRIVATE_KEY_VAL="${WALLET_PK_BASE:-}"
+    export UNIV3_ROUTER="${BASE_UNIV3_ROUTER:-}"
+    export SECONDARY_ROUTER1="${BASE_AERODROME_ROUTER:-}"
+    ;;
+  *) echo "Unsupported chain: $CHAIN (use arb|op|polygon|base)" >&2; exit 1 ;;
 esac
 
 export LIQUIDATOR="$LIQ"

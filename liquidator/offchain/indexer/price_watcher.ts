@@ -1,5 +1,5 @@
 import type { Address, Chain, PublicClient, Transport } from 'viem';
-import { ChainCfg, TokenInfo } from '../infra/config';
+import { ChainCfg, TokenInfo, loadConfig } from '../infra/config';
 import { bestRoute, RouteOption } from '../simulator/router';
 
 type RpcClient = PublicClient<Transport, Chain | undefined, any>;
@@ -217,6 +217,7 @@ async function cachedBestRoute(params: {
   const pending = bestRoute({
     client,
     chain,
+    contract: (loadConfig().contracts!.liquidator![chain.id]) as Address,
     collateral,
     debt,
     seizeAmount: unitIn,

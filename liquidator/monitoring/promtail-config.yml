@@ -12,3 +12,20 @@ scrape_configs:
         labels:
           job: orchestrator
           __path__: /var/lib/docker/containers/*/*-json.log
+  - job_name: dryrun-files
+    static_configs:
+      - targets: ['localhost']
+        labels:
+          job: dryrun
+          source: human
+          __path__: /logs/dryrun_*.log
+      - targets: ['localhost']
+        labels:
+          job: dryrun
+          source: json
+          __path__: /logs/dryrun_*.jsonl
+      - targets: ['localhost']
+        labels:
+          job: dryrun
+          source: live
+          __path__: /logs/live.log

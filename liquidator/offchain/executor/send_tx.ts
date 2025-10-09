@@ -3,7 +3,7 @@ import { arbitrum, optimism, base, polygon } from 'viem/chains';
 import { wallet } from './mev_protect';
 import { encodePlan } from './build_tx';
 import LiquidatorAbi from './Liquidator.abi.json';
-import { instrument } from '../infra/instrument';
+import { instrument, metricTargetFromRpc } from '../infra/instrument';
 
 const HEALTH_FACTOR_ERROR = 'HealthFactorNotBelowThreshold';
 const HEALTH_FACTOR_SELECTOR = '0x930bb771';
@@ -55,6 +55,9 @@ export async function sendLiquidation(
   } as const;
 
   // Estimate then send
+  const publicTarget = metricTargetFromRpc(chainRpc, 'public');
+  const writeTarget = metricTargetFromRpc(writeRpc, privateRpc ? 'private' : 'public');
+
   const gas = await instrument('rpc', 'estimateContractGas', async () => {
     try {
       return await pub.estimateContractGas({ account: w.account, ...data });
@@ -64,7 +67,7 @@ export async function sendLiquidation(
       }
       throw err;
     }
-  });
+  }, { target: publicTarget });
 
   return instrument('rpc', 'writeContract', async () => {
     try {
@@ -77,5 +80,5 @@ export async function sendLiquidation(
       }
       throw err;
     }
-  });
+  }, { target: writeTarget });
 }

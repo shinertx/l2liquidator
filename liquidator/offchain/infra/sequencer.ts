@@ -30,7 +30,7 @@ export async function checkSequencerStatus(params: {
   staleAfterSeconds?: number;
   recoveryGraceSeconds?: number;
 }): Promise<SequencerStatus> {
-  const { rpcUrl, feed, staleAfterSeconds = 120, recoveryGraceSeconds } = params;
+  const { rpcUrl, feed, staleAfterSeconds = Number.POSITIVE_INFINITY, recoveryGraceSeconds } = params;
   if (!feed) {
     return { ok: true };
   }
@@ -48,12 +48,18 @@ export async function checkSequencerStatus(params: {
       functionName: 'latestRoundData',
     });
 
-    const isUp = answer === 1n;
-    if (!isUp) {
-      return { ok: false, reason: 'status-down', updatedAt: Number(updatedAt) };
+    // Chainlink sequencer feeds use answer=0 when the sequencer is live and answer=1 when down.
+    const updated = Number(updatedAt);
+    const safeUpdated = Number.isFinite(updated) && updated > 0 ? updated : undefined;
+
+    if (answer === 1n) {
+      return { ok: false, reason: 'status-down', updatedAt: safeUpdated };
     }
 
-    const updated = Number(updatedAt);
+    if (answer !== 0n) {
+      return { ok: false, reason: `unknown-answer ${answer}`, updatedAt: safeUpdated };
+    }
+
     const now = Math.floor(Date.now() / 1000);
     if (!Number.isFinite(updated) || updated === 0) {
       return { ok: false, reason: 'updated-zero' };
@@ -61,7 +67,7 @@ export async function checkSequencerStatus(params: {
 
     const age = now - updated;
 
-    if (age > staleAfterSeconds) {
+    if (Number.isFinite(staleAfterSeconds) && staleAfterSeconds > 0 && age > staleAfterSeconds) {
       return { ok: false, reason: `stale ${age}s`, updatedAt: updated };
     }
 

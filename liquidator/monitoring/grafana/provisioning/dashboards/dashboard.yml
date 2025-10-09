@@ -1,6 +1,6 @@
 apiVersion: 1
-datasources: []
-dashboardProviders:
+
+providers:
   - name: founder
     orgId: 1
     folder: "Founder Ops"

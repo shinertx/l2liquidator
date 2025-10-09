@@ -2,6 +2,7 @@ import type { Chain, PublicClient, Transport } from 'viem';
 import { Buffer } from 'buffer';
 import { Address, getAddress } from 'viem';
 import { ChainCfg, TokenInfo } from '../infra/config';
+import LiquidatorAbi from '../executor/Liquidator.abi.json';
 
 export const DEX_ID = {
   UNI_V3: 0,
@@ -228,73 +229,112 @@ async function quoteSolidlyV2(
   return amounts[amounts.length - 1];
 }
 
-export async function bestRoute({
+async function buildRouteQuote({
   client,
   chain,
+  contract,
   collateral,
   debt,
   seizeAmount,
   slippageBps,
-  options,
+  option,
 }: {
   client: RpcClient;
   chain: ChainCfg;
+  contract: Address;
+  collateral: TokenInfo;
+  debt: TokenInfo;
+  seizeAmount: bigint;
+  slippageBps: number;
+  option: RouteOption;
+}): Promise<RouteQuote | null> {
+  try {
+    // Skip routes not allowed in Liquidator
+    const allowed = (await client.readContract({
+      address: getAddress(contract),
+      abi: LiquidatorAbi as any,
+      functionName: 'allowedRouters',
+      args: [getAddress(option.router)],
+    })) as boolean;
+    if (!allowed) return null;
+
+    let quoted: bigint;
+    let quotePath: `0x${string}` | undefined;
+    if (option.type === 'UniV3') {
+      quoted = await quoteUniV3(client, chain, option, collateral, debt, seizeAmount);
+    } else if (option.type === 'SolidlyV2') {
+      quoted = await quoteSolidlyV2(client, option, collateral, debt, seizeAmount);
+    } else if (option.type === 'UniV2') {
+      quoted = await quoteUniV2(client, option, collateral, debt, seizeAmount);
+    } else {
+      const multi = await quoteUniV3Multi(client, chain, option, seizeAmount);
+      quoted = multi.quoted;
+      quotePath = multi.path;
+    }
+
+    const amountOutMin = (quoted * BigInt(10_000 - slippageBps)) / 10_000n;
+    return {
+      dexId:
+        option.type === 'UniV3'
+          ? DEX_ID.UNI_V3
+          : option.type === 'SolidlyV2'
+          ? DEX_ID.SOLIDLY_V2
+          : option.type === 'UniV2'
+          ? DEX_ID.UNI_V2
+          : DEX_ID.UNI_V3_MULTI,
+      router: option.router,
+      uniFee: option.type === 'UniV3' ? option.fee : undefined,
+      solidlyStable: option.type === 'SolidlyV2' ? option.stable : undefined,
+      solidlyFactory: option.type === 'SolidlyV2' ? option.factory : undefined,
+      path: quotePath,
+      fees: option.type === 'UniV3Multi' ? option.fees : undefined,
+      amountOutMin,
+      quotedOut: quoted,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function quoteRoutes(params: {
+  client: RpcClient;
+  chain: ChainCfg;
+  contract: Address;
+  collateral: TokenInfo;
+  debt: TokenInfo;
+  seizeAmount: bigint;
+  slippageBps: number;
+  options: RouteOption[];
+}): Promise<RouteQuote[]> {
+  const { options, ...rest } = params;
+  if (rest.seizeAmount === 0n || options.length === 0) {
+    return [];
+  }
+  const quotes: RouteQuote[] = [];
+  for (const option of options) {
+    const quote = await buildRouteQuote({ ...rest, option });
+    if (quote) quotes.push(quote);
+  }
+  return quotes;
+}
+
+export async function bestRoute(params: {
+  client: RpcClient;
+  chain: ChainCfg;
+  contract: Address;
   collateral: TokenInfo;
   debt: TokenInfo;
   seizeAmount: bigint;
   slippageBps: number;
   options: RouteOption[];
 }): Promise<RouteQuote | null> {
-  if (seizeAmount === 0n || options.length === 0) {
-    return null;
-  }
-
+  const quotes = await quoteRoutes(params);
+  if (quotes.length === 0) return null;
   let best: RouteQuote | null = null;
-
-  for (const option of options) {
-    try {
-      let quoted: bigint;
-      let quotePath: `0x${string}` | undefined;
-      if (option.type === 'UniV3') {
-        quoted = await quoteUniV3(client, chain, option, collateral, debt, seizeAmount);
-      } else if (option.type === 'SolidlyV2') {
-        quoted = await quoteSolidlyV2(client, option, collateral, debt, seizeAmount);
-      } else if (option.type === 'UniV2') {
-        quoted = await quoteUniV2(client, option, collateral, debt, seizeAmount);
-      } else {
-        const multi = await quoteUniV3Multi(client, chain, option, seizeAmount);
-        quoted = multi.quoted;
-        quotePath = multi.path;
-      }
-
-      const amountOutMin = (quoted * BigInt(10_000 - slippageBps)) / 10_000n;
-      const quote: RouteQuote = {
-        dexId:
-          option.type === 'UniV3'
-            ? DEX_ID.UNI_V3
-            : option.type === 'SolidlyV2'
-            ? DEX_ID.SOLIDLY_V2
-            : option.type === 'UniV2'
-            ? DEX_ID.UNI_V2
-            : DEX_ID.UNI_V3_MULTI,
-        router: option.router,
-        uniFee: option.type === 'UniV3' ? option.fee : undefined,
-        solidlyStable: option.type === 'SolidlyV2' ? option.stable : undefined,
-        solidlyFactory: option.type === 'SolidlyV2' ? option.factory : undefined,
-        path: quotePath,
-        fees: option.type === 'UniV3Multi' ? option.fees : undefined,
-        amountOutMin,
-        quotedOut: quoted,
-      };
-
-      if (!best || quoted > best.quotedOut) {
-        best = quote;
-      }
-    } catch {
-      // soft-fail and continue
-      continue;
+  for (const quote of quotes) {
+    if (!best || quote.quotedOut > best.quotedOut) {
+      best = quote;
     }
   }
-
   return best;
 }

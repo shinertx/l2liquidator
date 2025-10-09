@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Deploy Liquidator for a given chain (arb|op)
+# Deploy Liquidator for a given chain (arb|op|polygon|base)
 # Requires .env with RPC_*, WALLET_PK_*, *_AAVE_V3_PROVIDER, *_UNIV3_ROUTER, BENEFICIARY
 
 if [ $# -ne 1 ]; then
-  echo "Usage: $0 <arb|op>" >&2
+  echo "Usage: $0 <arb|op|polygon|base>" >&2
   exit 1
 fi
 
@@ -30,8 +30,20 @@ case "$CHAIN" in
     export AAVE_V3_PROVIDER="${OP_AAVE_V3_PROVIDER:-}"
     export UNIV3_ROUTER="${OP_UNIV3_ROUTER:-}"
     ;;
+  polygon)
+    RPC="${RPC_POLYGON:-}"
+    PRIVATE_KEY_VAL="${WALLET_PK_POLYGON:-}"
+    export AAVE_V3_PROVIDER="${POLYGON_AAVE_V3_PROVIDER:-}"
+    export UNIV3_ROUTER="${POLYGON_UNIV3_ROUTER:-}"
+    ;;
+  base)
+    RPC="${RPC_BASE:-}"
+    PRIVATE_KEY_VAL="${WALLET_PK_BASE:-}"
+    export AAVE_V3_PROVIDER="${BASE_AAVE_V3_PROVIDER:-}"
+    export UNIV3_ROUTER="${BASE_UNIV3_ROUTER:-}"
+    ;;
   *)
-    echo "Unsupported chain: $CHAIN (use arb|op)" >&2
+    echo "Unsupported chain: $CHAIN (use arb|op|polygon|base)" >&2
     exit 1
     ;;
 esac

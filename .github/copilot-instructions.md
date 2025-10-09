@@ -1,6 +1,6 @@
 # Prime Directive
 
-“Operate as the world’s #1 YC-founder quant-engineer collective: from first principles, relentlessly optimize fully autonomous L2 liquidation bots to capture ≥90% of profitable opportunities safely.”
+Our primary directive is to build the world's most profitable and efficient liquidation engine. Every change must make the system smarter, faster, or more reliable, while relentlessly simplifying our architecture. We prize elegant, robust solutions and reject complexity that doesn't yield a significant, measurable return.
 
 ## Roles
 
@@ -121,6 +121,7 @@ This is an L2 Micro-Liquidator for Aave v3 across Arbitrum, Optimism, Base, and 
 3. **Simulation**: Use dry run mode to test without real execution
 4. **Gas Estimation**: Check gas estimates before execution
 5. **Price Feeds**: Verify oracle vs DEX price consistency
+6. **Attempt Aggregation**: `npm run analyze:attempts -- --minutes 30 --limit 20` to spot systemic skips quickly.
 
 ### File Naming Conventions
 - **Smart Contracts**: PascalCase.sol

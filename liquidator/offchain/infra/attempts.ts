@@ -1,8 +1,11 @@
-import { db } from './db';
+import { db, waitForDb, classifyDbError, type DbErrorInfo } from './db';
 import { log } from './logger';
 
 const hasDb = Boolean(process.env.DATABASE_URL);
 let warnedNoDb = false;
+let lastDbErrorLoggedAt = 0;
+let lastDbErrorKey: string | null = null;
+const DB_ERROR_LOG_WINDOW_MS = 60_000;
 
 function ensureDb(action: string): boolean {
   if (hasDb) return true;
@@ -11,6 +14,28 @@ function ensureDb(action: string): boolean {
     warnedNoDb = true;
   }
   return false;
+}
+
+function logDbFailure(action: string, err: unknown, level: 'warn' | 'error' = 'error'): void {
+  const info: DbErrorInfo = classifyDbError(err);
+  const key = info.code ?? info.message;
+  const now = Date.now();
+  const withinWindow = now - lastDbErrorLoggedAt < DB_ERROR_LOG_WINDOW_MS && key === lastDbErrorKey;
+  const logLevel: 'debug' | 'warn' | 'error' = withinWindow ? 'debug' : level;
+  const payload: Record<string, unknown> = {
+    action,
+    code: info.code,
+    category: info.category,
+    message: info.message,
+    target: db.target,
+  };
+  if (info.hint) payload.hint = info.hint;
+
+  log[logLevel](payload, 'attempt-db-error');
+  if (!withinWindow) {
+    lastDbErrorLoggedAt = now;
+    lastDbErrorKey = key;
+  }
 }
 
 const CREATE_TABLE = `
@@ -45,11 +70,13 @@ export type AttemptStatus =
 export async function ensureAttemptTable(): Promise<void> {
   if (!ensureDb('init')) return;
   try {
+    await waitForDb();
     await db.query(CREATE_TABLE);
     await db.query(CREATE_INDEX);
     await db.query(ADD_DETAILS_COLUMN);
   } catch (err) {
-    log.warn({ err: (err as Error).message }, 'attempt-table-init-failed');
+    logDbFailure('init', err, 'error');
+    throw err;
   }
 }
 
@@ -76,7 +103,7 @@ export async function recordAttemptRow(params: {
       ]
     );
   } catch (err) {
-    log.warn({ err: (err as Error).message }, 'attempt-row-insert-failed');
+    logDbFailure('record', err, 'warn');
   }
 }
 
@@ -95,7 +122,7 @@ export async function recentFailureCount(params: {
     );
     return res.rows[0]?.count ?? 0;
   } catch (err) {
-    log.warn({ err: (err as Error).message }, 'attempt-recent-failure-query-failed');
+    logDbFailure('recent', err, 'warn');
     return 0;
   }
 }

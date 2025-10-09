@@ -4,7 +4,7 @@ import { Address, createPublicClient, formatEther, formatUnits, getAddress, http
 import { privateKeyToAccount } from 'viem/accounts';
 import { loadConfig, ChainCfg, TokenInfo, AppConfig } from '../infra/config';
 import { log } from '../infra/logger';
-import { db } from '../infra/db';
+import { db, waitForDb, classifyDbError, type DbErrorInfo } from '../infra/db';
 import { redis } from '../infra/redis';
 import { oraclePriceDetails } from '../indexer/price_watcher';
 
@@ -69,6 +69,21 @@ const SOLIDLY_ROUTER_ABI = [
     outputs: [{ name: 'amounts', type: 'uint256[]' }],
   },
 ] as const;
+
+type DiagnosticStatus = 'ok' | 'warn' | 'error';
+type Diagnostic = {
+  component: string;
+  status: DiagnosticStatus;
+  message: string;
+  hint?: string;
+  meta?: Record<string, unknown>;
+};
+
+const diagnostics: Diagnostic[] = [];
+
+function recordDiagnostic(component: string, status: DiagnosticStatus, message: string, hint?: string, meta?: Record<string, unknown>) {
+  diagnostics.push({ component, status, message, hint, meta });
+}
 
 const ERC20_ABI = [
   {
@@ -185,14 +200,25 @@ function endpointFor(chainId: number): string {
 async function checkDatabase(): Promise<boolean> {
   if (!process.env.DATABASE_URL) {
     log.warn({ env: 'DATABASE_URL' }, 'preflight-db-missing-env');
+    recordDiagnostic('database', 'error', 'DATABASE_URL env var is missing');
     return false;
   }
   try {
-    await db.query('SELECT 1');
-    log.info({}, 'preflight-db-ok');
+    await waitForDb({ attempts: 5, delayMs: 750, backoffFactor: 1.4 });
+    log.info({ target: db.target }, 'preflight-db-ok');
+    recordDiagnostic('database', 'ok', `Connected to Postgres at ${db.target}`);
     return true;
   } catch (err) {
-    log.error({ err: (err as Error).message }, 'preflight-db-failed');
+    const info: DbErrorInfo = classifyDbError(err);
+    const payload: Record<string, unknown> = {
+      target: db.target,
+      err: info.message,
+      category: info.category,
+      code: info.code,
+    };
+    if (info.hint) payload.hint = info.hint;
+    log.error(payload, 'preflight-db-failed');
+    recordDiagnostic('database', 'error', info.message, info.hint, { target: db.target, category: info.category, code: info.code });
     return false;
   }
 }
@@ -200,18 +226,30 @@ async function checkDatabase(): Promise<boolean> {
 async function checkRedis(): Promise<boolean> {
   if (!process.env.REDIS_URL) {
     log.warn({ env: 'REDIS_URL' }, 'preflight-redis-missing-env');
+    recordDiagnostic('redis', 'error', 'REDIS_URL env var is missing');
     return false;
   }
   if (!redis) {
     log.error({}, 'preflight-redis-uninitialized');
+    recordDiagnostic('redis', 'error', 'Redis client not initialized', 'Instantiate Redis client before running preflight.');
     return false;
   }
   try {
     await redis.ping();
     log.info({}, 'preflight-redis-ok');
+    recordDiagnostic('redis', 'ok', 'Redis responded to PING');
     return true;
   } catch (err) {
-    log.error({ err: (err as Error).message }, 'preflight-redis-failed');
+    const message = (err as Error).message;
+    const code = (err as any)?.code as string | undefined;
+    const hint = code === 'ECONNREFUSED' || message.includes('ECONNREFUSED')
+      ? `Ensure Redis is reachable at ${process.env.REDIS_URL ?? 'configured endpoint'} and running.`
+      : undefined;
+    const payload: Record<string, unknown> = { err: message };
+    if (code) payload.code = code;
+    if (hint) payload.hint = hint;
+    log.error(payload, 'preflight-redis-failed');
+    recordDiagnostic('redis', 'error', message, hint, { code });
     return false;
   }
 }
@@ -223,9 +261,12 @@ async function checkRpcs(cfg = loadConfig()): Promise<boolean> {
       const client = createPublicClient({ transport: http(chain.rpc) });
       const block = await client.getBlockNumber();
       log.info({ chainId: chain.id, block: block.toString() }, 'preflight-rpc-ok');
+      recordDiagnostic('rpc', 'ok', `RPC reachable for chain ${chain.id}`, undefined, { chainId: chain.id, block: block.toString(), rpc: chain.rpc });
     } catch (err) {
       ok = false;
-      log.error({ chainId: chain.id, err: (err as Error).message }, 'preflight-rpc-failed');
+      const message = (err as Error).message;
+      log.error({ chainId: chain.id, err: message }, 'preflight-rpc-failed');
+      recordDiagnostic('rpc', 'error', message, undefined, { chainId: chain.id, rpc: chain.rpc });
     }
   }
   return ok;
@@ -234,6 +275,7 @@ async function checkRpcs(cfg = loadConfig()): Promise<boolean> {
 async function pingSubgraph(chainId: number, url: string) {
   if (!url) {
     log.warn({ chainId }, 'preflight-subgraph-missing-url');
+    recordDiagnostic('subgraph', 'error', `Missing subgraph URL for chain ${chainId}`, 'Set AAVE_V3_SUBGRAPH_<CHAIN> or provide fallback.', { chainId });
     return false;
   }
   const started = Date.now();
@@ -255,13 +297,17 @@ async function pingSubgraph(chainId: number, url: string) {
     const json = (await res.json()) as { data?: { _meta?: { block?: { number?: number; timestamp?: number }; deployment?: string } }; errors?: unknown };
     if (json.errors) {
       log.error({ chainId, url, errors: json.errors, elapsed }, 'preflight-subgraph-graphql-failed');
+      recordDiagnostic('subgraph', 'error', 'GraphQL error from subgraph', undefined, { chainId, url, errors: json.errors, elapsed });
       return false;
     }
     const meta = json.data?._meta ?? {};
     log.info({ chainId, url, block: meta.block?.number, timestamp: meta.block?.timestamp, deployment: meta.deployment, elapsed }, 'preflight-subgraph-ok');
+    recordDiagnostic('subgraph', 'ok', `Subgraph responded for chain ${chainId}`, undefined, { chainId, url, block: meta.block?.number, elapsed });
     return true;
   } catch (err) {
-    log.error({ chainId, url, err: (err as Error).message }, 'preflight-subgraph-request-failed');
+    const message = (err as Error).message;
+    log.error({ chainId, url, err: message }, 'preflight-subgraph-request-failed');
+    recordDiagnostic('subgraph', 'error', message, undefined, { chainId, url });
     return false;
   }
 }
@@ -289,6 +335,7 @@ async function checkQuotes(cfg = loadConfig()): Promise<boolean> {
     const weth = tokens['WETH'] || tokens['ETH'];
     if (!usdc || !weth) {
       log.warn({ chainId: chain.id }, 'preflight-quote-missing-tokens');
+      recordDiagnostic('dex-quotes', 'error', `Missing USDC/WETH metadata on chain ${chain.id}`, 'Run npm run sync:aave or update config tokens.', { chainId: chain.id });
       ok = false;
       continue;
     }
@@ -302,6 +349,7 @@ async function checkQuotes(cfg = loadConfig()): Promise<boolean> {
       try {
         if (!chain.quoter) {
           log.warn({ chainId: chain.id }, 'preflight-quote-missing-quoter');
+          recordDiagnostic('dex-quotes', 'error', `Missing UniV3 quoter for chain ${chain.id}`, 'Add quoter address to config.yaml', { chainId: chain.id });
           ok = false;
           continue;
         }
@@ -315,9 +363,12 @@ async function checkQuotes(cfg = loadConfig()): Promise<boolean> {
         });
         const amountOut = (result as any)[0] as bigint;
         log.info({ chainId: chain.id, dex: 'UniV3', fee, amountIn: amountIn.toString(), amountOut: amountOut.toString() }, 'preflight-quote-ok');
+        recordDiagnostic('dex-quotes', 'ok', `UniV3 quote ok on chain ${chain.id}`, undefined, { chainId: chain.id, dex: 'UniV3', fee, amountOut: amountOut.toString() });
       } catch (err) {
         ok = false;
-        log.error({ chainId: chain.id, dex: 'UniV3', fee, err: (err as Error).message }, 'preflight-quote-failed');
+        const message = (err as Error).message;
+        log.error({ chainId: chain.id, dex: 'UniV3', fee, err: message }, 'preflight-quote-failed');
+        recordDiagnostic('dex-quotes', 'error', message, undefined, { chainId: chain.id, dex: 'UniV3', fee });
       }
     }
 
@@ -333,9 +384,12 @@ async function checkQuotes(cfg = loadConfig()): Promise<boolean> {
         const out = (amounts as any).amounts ?? amounts;
         const last = Array.isArray(out) ? out[out.length - 1] : out;
         log.info({ chainId: chain.id, dex: 'CamelotV2', amountOut: (last as bigint).toString() }, 'preflight-quote-ok');
+        recordDiagnostic('dex-quotes', 'ok', `CamelotV2 quote ok on chain ${chain.id}`, undefined, { chainId: chain.id, dex: 'CamelotV2', amountOut: (last as bigint).toString() });
       } catch (err) {
         ok = false;
-        log.error({ chainId: chain.id, dex: 'CamelotV2', err: (err as Error).message }, 'preflight-quote-failed');
+        const message = (err as Error).message;
+        log.error({ chainId: chain.id, dex: 'CamelotV2', err: message }, 'preflight-quote-failed');
+        recordDiagnostic('dex-quotes', 'error', message, undefined, { chainId: chain.id, dex: 'CamelotV2' });
       }
     }
 
@@ -350,9 +404,12 @@ async function checkQuotes(cfg = loadConfig()): Promise<boolean> {
         const out = (amounts as any).amounts ?? amounts;
         const last = Array.isArray(out) ? out[out.length - 1] : out;
         log.info({ chainId: chain.id, dex: 'Velodrome', amountOut: (last as bigint).toString() }, 'preflight-quote-ok');
+        recordDiagnostic('dex-quotes', 'ok', `Velodrome quote ok on chain ${chain.id}`, undefined, { chainId: chain.id, dex: 'Velodrome', amountOut: (last as bigint).toString() });
       } catch (err) {
         ok = false;
-        log.error({ chainId: chain.id, dex: 'Velodrome', err: (err as Error).message }, 'preflight-quote-failed');
+        const message = (err as Error).message;
+        log.error({ chainId: chain.id, dex: 'Velodrome', err: message }, 'preflight-quote-failed');
+        recordDiagnostic('dex-quotes', 'error', message, undefined, { chainId: chain.id, dex: 'Velodrome' });
       }
     }
 
@@ -367,9 +424,12 @@ async function checkQuotes(cfg = loadConfig()): Promise<boolean> {
         const out = (amounts as any).amounts ?? amounts;
         const last = Array.isArray(out) ? out[out.length - 1] : out;
         log.info({ chainId: chain.id, dex: 'Aerodrome', amountOut: (last as bigint).toString() }, 'preflight-quote-ok');
+        recordDiagnostic('dex-quotes', 'ok', `Aerodrome quote ok on chain ${chain.id}`, undefined, { chainId: chain.id, dex: 'Aerodrome', amountOut: (last as bigint).toString() });
       } catch (err) {
         ok = false;
-        log.error({ chainId: chain.id, dex: 'Aerodrome', err: (err as Error).message }, 'preflight-quote-failed');
+        const message = (err as Error).message;
+        log.error({ chainId: chain.id, dex: 'Aerodrome', err: message }, 'preflight-quote-failed');
+        recordDiagnostic('dex-quotes', 'error', message, undefined, { chainId: chain.id, dex: 'Aerodrome' });
       }
     }
   }
@@ -386,17 +446,22 @@ async function checkOracles(cfg = loadConfig()): Promise<boolean> {
         const detail = await oraclePriceDetails(client, token);
         if (!detail || typeof detail.priceUsd !== 'number') {
           log.warn({ chainId: chain.id, symbol, token: token.address }, 'preflight-oracle-missing-price');
+          recordDiagnostic('oracle', 'warn', `Missing oracle price for ${symbol} on chain ${chain.id}`, 'Check Chainlink feed or fallback configuration.', { chainId: chain.id, symbol, feed: token.chainlinkFeed });
           continue;
         }
 
         if (detail.stale) {
           log.warn({ chainId: chain.id, symbol, price: detail.priceUsd, ageSec: detail.ageSeconds }, 'preflight-oracle-stale');
+          recordDiagnostic('oracle', 'warn', `Oracle price stale for ${symbol} on chain ${chain.id}`, 'Validate oracle freshness or enable TWAP fallback.', { chainId: chain.id, symbol, ageSec: detail.ageSeconds });
         } else {
           log.info({ chainId: chain.id, symbol, price: detail.priceUsd, ageSec: detail.ageSeconds }, 'preflight-oracle-ok');
+          recordDiagnostic('oracle', 'ok', `Oracle healthy for ${symbol} on chain ${chain.id}`, undefined, { chainId: chain.id, symbol, ageSec: detail.ageSeconds });
         }
       } catch (err) {
         ok = false;
-        log.error({ chainId: chain.id, symbol, err: (err as Error).message }, 'preflight-oracle-failed');
+        const message = (err as Error).message;
+        log.error({ chainId: chain.id, symbol, err: message }, 'preflight-oracle-failed');
+        recordDiagnostic('oracle', 'error', message, undefined, { chainId: chain.id, symbol });
       }
     }
   }
@@ -420,12 +485,14 @@ async function checkWalletBalances(cfg = loadConfig()): Promise<boolean> {
     const pkEnv = WALLET_PK_ENV[chain.id];
     if (!pkEnv) {
       log.warn({ chainId: chain.id }, 'preflight-wallet-missing-env-mapping');
+      recordDiagnostic('wallet', 'error', `No WALLET_PK mapping for chain ${chain.id}`, 'Add entry to WALLET_PK env map.', { chainId: chain.id });
       ok = false;
       continue;
     }
     const pk = process.env[pkEnv];
     if (!pk || pk.includes('MISSING')) {
       log.warn({ chainId: chain.id, env: pkEnv }, 'preflight-wallet-missing');
+  recordDiagnostic('wallet', 'error', `Missing private key env ${pkEnv}`, `Populate ${pkEnv} with a funded wallet.`, { chainId: chain.id, env: pkEnv });
       ok = false;
       continue;
     }
@@ -434,6 +501,7 @@ async function checkWalletBalances(cfg = loadConfig()): Promise<boolean> {
       account = privateKeyToAccount(pk as `0x${string}`);
     } catch (err) {
       log.error({ chainId: chain.id, env: pkEnv, err: (err as Error).message }, 'preflight-wallet-invalid');
+      recordDiagnostic('wallet', 'error', `Invalid private key in ${pkEnv}`, 'Ensure the env var contains a 0x-prefixed hex key.', { chainId: chain.id, env: pkEnv });
       ok = false;
       continue;
     }
@@ -445,13 +513,17 @@ async function checkWalletBalances(cfg = loadConfig()): Promise<boolean> {
       const minEth = formatEther(minBalance);
       if (balance < minBalance) {
         log.warn({ chainId: chain.id, address: account.address, balanceEth, minEth }, 'preflight-wallet-low-balance');
+        recordDiagnostic('wallet', 'warn', `Wallet low balance on chain ${chain.id}`, 'Top up native token for gas.', { chainId: chain.id, address: account.address, balanceEth, minEth });
         ok = false;
       } else {
         log.info({ chainId: chain.id, address: account.address, balanceEth }, 'preflight-wallet-ok');
+        recordDiagnostic('wallet', 'ok', `Wallet funded on chain ${chain.id}`, undefined, { chainId: chain.id, address: account.address, balanceEth });
       }
     } catch (err) {
       ok = false;
-      log.error({ chainId: chain.id, err: (err as Error).message }, 'preflight-wallet-balance-failed');
+      const message = (err as Error).message;
+      log.error({ chainId: chain.id, err: message }, 'preflight-wallet-balance-failed');
+      recordDiagnostic('wallet', 'error', message, undefined, { chainId: chain.id, address: account.address });
     }
   }
   return ok;
@@ -501,6 +573,7 @@ async function checkContracts(cfg = loadConfig()): Promise<boolean> {
     const address = contracts?.liquidator?.[chain.id];
     if (!address) {
       log.warn({ chainId: chain.id }, 'preflight-liquidator-missing');
+      recordDiagnostic('contracts', 'error', `Missing liquidator address for chain ${chain.id}`, 'Deploy contract and update config.', { chainId: chain.id });
       ok = false;
       continue;
     }
@@ -518,19 +591,25 @@ async function checkContracts(cfg = loadConfig()): Promise<boolean> {
       const expectedOwner = safeEnv && process.env[safeEnv] ? getAddress(process.env[safeEnv] as Address) : undefined;
       if (expectedOwner && expectedOwner.toLowerCase() !== chainOwner.toLowerCase()) {
         log.warn({ chainId: chain.id, owner: chainOwner, expectedOwner }, 'preflight-liquidator-owner-mismatch');
+        recordDiagnostic('contracts', 'warn', 'Liquidator owner mismatch', 'Update SAFE address or transfer ownership.', { chainId: chain.id, owner: chainOwner, expectedOwner });
       } else {
         log.info({ chainId: chain.id, owner: chainOwner }, 'preflight-liquidator-owner');
+        recordDiagnostic('contracts', 'ok', `Owner verified on chain ${chain.id}`, undefined, { chainId: chain.id, owner: chainOwner });
       }
       if (isPaused) {
         log.error({ chainId: chain.id }, 'preflight-liquidator-paused');
+        recordDiagnostic('contracts', 'error', 'Liquidator is paused', 'Unpause contract before running orchestrator.', { chainId: chain.id });
         ok = false;
       } else {
         log.info({ chainId: chain.id }, 'preflight-liquidator-unpaused');
+        recordDiagnostic('contracts', 'ok', `Liquidator active on chain ${chain.id}`);
       }
       if (beneficiary && beneficiary.toLowerCase() !== contractBeneficiary.toLowerCase()) {
         log.warn({ chainId: chain.id, beneficiary: contractBeneficiary, expected: beneficiary }, 'preflight-liquidator-beneficiary-mismatch');
+        recordDiagnostic('contracts', 'warn', 'Beneficiary mismatch', 'Align beneficiary in config or contract.', { chainId: chain.id, beneficiary: contractBeneficiary, expected: beneficiary });
       } else {
         log.info({ chainId: chain.id, beneficiary: contractBeneficiary }, 'preflight-liquidator-beneficiary');
+        recordDiagnostic('contracts', 'ok', `Beneficiary verified on chain ${chain.id}`, undefined, { chainId: chain.id, beneficiary: contractBeneficiary });
       }
 
       for (const router of routersForChain(chain, cfg)) {
@@ -538,13 +617,17 @@ async function checkContracts(cfg = loadConfig()): Promise<boolean> {
           const allowed = await client.readContract({ address, abi: LIQUIDATOR_STATE_ABI, functionName: 'allowedRouters', args: [router] });
           if (!allowed) {
             log.warn({ chainId: chain.id, router }, 'preflight-router-not-allowed');
+            recordDiagnostic('contracts', 'warn', 'Router not allowed', 'Call allowRouter on liquidator.', { chainId: chain.id, router });
             ok = false;
           } else {
             log.info({ chainId: chain.id, router }, 'preflight-router-allowed');
+            recordDiagnostic('contracts', 'ok', `Router ${router} allowed on chain ${chain.id}`, undefined, { chainId: chain.id, router });
           }
         } catch (err) {
           ok = false;
-          log.error({ chainId: chain.id, router, err: (err as Error).message }, 'preflight-router-check-failed');
+          const message = (err as Error).message;
+          log.error({ chainId: chain.id, router, err: message }, 'preflight-router-check-failed');
+          recordDiagnostic('contracts', 'error', message, undefined, { chainId: chain.id, router });
         }
       }
 
@@ -554,23 +637,31 @@ async function checkContracts(cfg = loadConfig()): Promise<boolean> {
           const balance = (await client.readContract({ address: getAddress(info.address as Address), abi: ERC20_ABI, functionName: 'balanceOf', args: [address] })) as bigint;
           const formatted = formatUnits(balance, info.decimals);
           log.info({ chainId: chain.id, contract: address, token: symbol, balance: formatted }, 'preflight-liquidator-token-balance');
+          recordDiagnostic('inventory', 'ok', `Liquidator holds ${symbol} on chain ${chain.id}`, undefined, { chainId: chain.id, token: symbol, balance: formatted });
         } catch (err) {
           ok = false;
-          log.error({ chainId: chain.id, contract: address, token: symbol, err: (err as Error).message }, 'preflight-liquidator-token-balance-failed');
+          const message = (err as Error).message;
+          log.error({ chainId: chain.id, contract: address, token: symbol, err: message }, 'preflight-liquidator-token-balance-failed');
+          recordDiagnostic('inventory', 'error', message, undefined, { chainId: chain.id, token: symbol });
         }
       }
     } catch (err) {
       ok = false;
-      log.error({ chainId: chain.id, err: (err as Error).message }, 'preflight-liquidator-state-failed');
+      const message = (err as Error).message;
+      log.error({ chainId: chain.id, err: message }, 'preflight-liquidator-state-failed');
+      recordDiagnostic('contracts', 'error', message, undefined, { chainId: chain.id });
     }
 
     try {
       const nativeBalance = await client.getBalance({ address });
       if (nativeBalance > 0n) {
         log.info({ chainId: chain.id, contract: address, balanceEth: formatEther(nativeBalance) }, 'preflight-liquidator-native-balance');
+        recordDiagnostic('inventory', 'ok', `Liquidator native balance ${formatEther(nativeBalance)} on chain ${chain.id}`, undefined, { chainId: chain.id, balanceEth: formatEther(nativeBalance) });
       }
     } catch (err) {
-      log.warn({ chainId: chain.id, contract: address, err: (err as Error).message }, 'preflight-liquidator-native-check-failed');
+      const message = (err as Error).message;
+      log.warn({ chainId: chain.id, contract: address, err: message }, 'preflight-liquidator-native-check-failed');
+      recordDiagnostic('inventory', 'warn', message, undefined, { chainId: chain.id });
     }
   }
   return ok;
@@ -579,13 +670,16 @@ async function checkContracts(cfg = loadConfig()): Promise<boolean> {
 function checkKillSwitchStatus(): boolean {
   const killPath = process.env.KILL_SWITCH_FILE;
   if (!killPath) {
+    recordDiagnostic('kill-switch', 'ok', 'No kill switch configured');
     return true;
   }
   if (fs.existsSync(killPath)) {
     log.warn({ killSwitchFile: killPath }, 'preflight-kill-switch-active');
+    recordDiagnostic('kill-switch', 'error', `Kill switch file present at ${killPath}`, 'Remove the file to resume operations.', { killSwitchFile: killPath });
     return false;
   }
   log.info({ killSwitchFile: killPath }, 'preflight-kill-switch-clear');
+  recordDiagnostic('kill-switch', 'ok', 'Kill switch clear', undefined, { killSwitchFile: killPath });
   return true;
 }
 
@@ -603,6 +697,13 @@ async function main() {
   ]);
 
   const killSwitchOk = checkKillSwitchStatus();
+
+  const nonOkDiagnostics = diagnostics.filter((d) => d.status !== 'ok');
+  const okHighlights = diagnostics.filter((d) => d.status === 'ok' && ['database', 'redis', 'kill-switch'].includes(d.component));
+  const diagnosticSummary = nonOkDiagnostics.length > 0 ? nonOkDiagnostics : okHighlights;
+  if (diagnosticSummary.length > 0) {
+    log.info({ diagnostics: diagnosticSummary }, 'preflight-diagnostics');
+  }
 
   if (redis) {
     try {

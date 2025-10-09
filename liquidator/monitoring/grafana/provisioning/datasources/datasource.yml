@@ -9,3 +9,16 @@ datasources:
     type: loki
     access: proxy
     url: http://loki:3100
+  - name: Liquidations DB
+    type: postgres
+    access: proxy
+    url: db:5432
+    user: liquidator
+    secureJsonData:
+      password: liquidator
+    jsonData:
+      database: liquidator
+      sslmode: disable
+      maxOpenConns: 5
+      maxIdleConns: 5
+      connMaxLifetime: 120

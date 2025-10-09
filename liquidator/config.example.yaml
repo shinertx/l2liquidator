@@ -1,11 +1,47 @@
 contracts:
   liquidator:
+    1: "0x..."
     42161: "0x..."
     10: "0x..."
     8453: "0x..."
     137: "0x..."
 
 chains:
+  - id: 1      # Ethereum mainnet
+    name: ethereum
+    rpc: ${RPC_ETH}
+    wsRpc: ${WS_ETH}
+    privtx: ${PRIVTX_ETH}
+    aaveProvider: "0xa97684EaD0E402dC232d5A977953DF7ECBaB3CDb"
+    uniV3Router: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+    quoter: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e"
+    enabled: false
+    tokens:
+      USDC:
+        address: "0xA0b86991C6218B36c1d19D4a2e9Eb0cE3606eB48"
+        decimals: 6
+        chainlinkFeed: "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6"
+      DAI:
+        address: "0x6B175474E89094C44Da98b954EedeAC495271d0F"
+        decimals: 18
+        chainlinkFeed: "0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9"
+      USDT:
+        address: "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+        decimals: 6
+        chainlinkFeed: "0xEe9F2375b4bdF6387aa8265dD4FB8F16512A1d46"
+      WETH:
+        address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+        decimals: 18
+        chainlinkFeed: "0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419"
+      WBTC:
+        address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599"
+        decimals: 8
+        chainlinkFeed: "0xf4030086522a5beea4988f8ca5b36dbc97bee88c"
+      stETH:
+        address: "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84"
+        decimals: 18
+        chainlinkFeed: "0xcfe54b5cd566ab89272946f602d76ea879cab4a8"
+
   - id: 42161   # Arbitrum
     name: arbitrum
     rpc: ${RPC_ARB}
@@ -29,6 +65,9 @@ chains:
         address: "0xba5DdD1f9d7F570dc94a51479a000E3BCE967196"
         decimals: 18
         chainlinkFeed: "0xaD1d5344AaDE45F43E596773Bcc4c423EAbdD034"
+      RDNT:
+        address: "0x3082CC23568Ea640225c2467653dB90e9250AaA0"
+        decimals: 18
       weETH:
         address: "0x35751007a407ca6FEFfE80b3cB397736D2cf4dbe"
         decimals: 18
@@ -199,6 +238,10 @@ assets:
     floorBps: 20
     gapCapBps: 130
     slippageBps: 80
+  stETH:
+    floorBps: 20
+    gapCapBps: 130
+    slippageBps: 80
   AAVE:
     floorBps: 25
     gapCapBps: 150
@@ -249,6 +292,69 @@ assets:
     slippageBps: 90
 
 markets:
+  - protocol: aavev3
+    chainId: 1
+    debtAsset: USDC
+    collateralAsset: WETH
+    closeFactorBps: 4850
+    bonusBps: 800
+    enabled: false
+  - protocol: aavev3
+    chainId: 1
+    debtAsset: USDT
+    collateralAsset: WETH
+    closeFactorBps: 4850
+    bonusBps: 800
+    enabled: false
+  - protocol: aavev3
+    chainId: 1
+    debtAsset: DAI
+    collateralAsset: WETH
+    closeFactorBps: 4850
+    bonusBps: 800
+    enabled: false
+  - protocol: aavev3
+    chainId: 1
+    debtAsset: USDC
+    collateralAsset: WBTC
+    closeFactorBps: 4850
+    bonusBps: 850
+    enabled: false
+  - protocol: compoundv3
+    chainId: 8453
+    debtAsset: USDC
+    collateralAsset: WETH
+    enabled: false
+  - protocol: compoundv3
+    chainId: 8453
+    debtAsset: USDC
+    collateralAsset: cbETH
+    enabled: false
+  - protocol: compoundv3
+    chainId: 10
+    debtAsset: USDC
+    collateralAsset: WETH
+    enabled: false
+  - protocol: morphoblue
+    chainId: 1
+    debtAsset: USDC
+    collateralAsset: WETH
+    enabled: false
+  - protocol: morphoblue
+    chainId: 1
+    debtAsset: USDC
+    collateralAsset: WBTC
+    enabled: false
+  - protocol: radiant
+    chainId: 42161
+    debtAsset: USDC
+    collateralAsset: WETH
+    enabled: false
+  - protocol: radiant
+    chainId: 42161
+    debtAsset: USDC
+    collateralAsset: WBTC
+    enabled: false
   - protocol: aavev3
     chainId: 42161
     debtAsset: USDC
@@ -393,6 +499,11 @@ markets:
 
 routing:
   prefer:
+    1:
+      USDC-WETH: ["UniV3:500","UniV3:3000"]
+      USDT-WETH: ["UniV3:500"]
+      DAI-WETH: ["UniV3:500"]
+      USDC-WBTC: ["UniV3:3000"]
     42161:
       USDC-WETH: ["UniV3:500","UniV3:3000","Camelot"]
       LINK-USDC: ["UniV3:3000","UniV3:500"]
@@ -425,24 +536,39 @@ risk:
   gasCapUsd: 15
   failRateCap: 0.25
   pnlPerGasMin: 1.4
+  pnlMultMin: 4
   maxAttemptsPerBorrowerHour: 6
   dryRun: false
   healthFactorMax: 0.985
   maxRepayUsd: 2500
   maxLiveExecutions: 150
   maxSessionNotionalUsd: 15000
+  minNetUsd: 1.5
+  maxRevertRate: 0.02
+  targetP95Ms: 120
+  chainSpendCapUsd: 4000
+  gasTopupMinUsd: 1000
+  depegMode: false
+  volatility:
+    sizeShrinkBp: 500
+    minNetUsd: 3
   denyAssets: []
 
 indexer:
   subgraphFirst: 1000
   dedupeMs: 60000
   pollMs: 200
-  hfThreshold: 1.015
+  hfThreshold: 0.995
 
 analysis:
   openaiKey: ${OPENAI_API_KEY}
 
 dexRouters:
+  1:
+    uniV3: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+    tokens:
+      USDC: "0xA0b86991C6218B36c1d19D4a2e9Eb0cE3606eB48"
+      WETH: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
   42161:
     uniV3: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
     camelotV2: "0xc873fEcbd354f5A56E00E710B90EF4201db2448d"
@@ -458,13 +584,14 @@ dexRouters:
       WETH: "0x4200000000000000000000000000000000000006"
   8453:
     uniV3: "0x2626664c2603336E57B271c5C0b26F421741e481"
-    aerodrome: "0xcF77A3bA9A5cA399B7c97C74D54e5B1bEb874E43"
+    aerodrome: "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43"
     aerodromeFactory: "0x420DD381b31aEf6683db6B902084cB0FFECe40Da"
     tokens:
       USDC: "0x833589fCD6eDb6E08f4c7C32D4f71B54bdA02913"
       WETH: "0x4200000000000000000000000000000000000006"
   137:
     uniV3: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+    camelotV2: "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff"
     tokens:
       USDC: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
       WETH: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619"

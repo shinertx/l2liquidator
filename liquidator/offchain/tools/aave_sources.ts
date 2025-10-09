@@ -1,7 +1,8 @@
 import '../infra/env';
-import { createPublicClient, getAddress, http } from 'viem';
+import { getAddress } from 'viem';
 import { loadConfig } from '../infra/config';
 import { getPoolFromProvider } from '../infra/aave_provider';
+import { getPublicClient } from '../infra/rpc_clients';
 
 const POOL_ABI = [
   { type: 'function', name: 'getReservesList', stateMutability: 'view', inputs: [], outputs: [{ type: 'address[]' }] },
@@ -23,8 +24,8 @@ const ORACLE_ABI = [
 async function main() {
   const cfg = loadConfig();
   for (const chain of cfg.chains.filter((c) => c.enabled)) {
-    const pool = await getPoolFromProvider(chain.rpc, chain.aaveProvider);
-    const client = createPublicClient({ transport: http(chain.rpc) });
+  const pool = await getPoolFromProvider(chain);
+  const client = getPublicClient(chain);
     const registry = await client.readContract({ address: getAddress(chain.aaveProvider), abi: PROVIDER_ABI, functionName: 'getPriceOracle' });
     console.log(`\nChain ${chain.id} oracle ${registry}`);
     const reserves = await client.readContract({ address: pool, abi: POOL_ABI, functionName: 'getReservesList' }) as `0x${string}`[];

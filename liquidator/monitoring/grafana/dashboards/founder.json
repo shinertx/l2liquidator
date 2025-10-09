@@ -12,6 +12,7 @@
       }
     ]
   },
+  "description": "Founder-friendly pulse of liquidation performance, health, and skips.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "gnetId": null,
@@ -21,118 +22,702 @@
   "liveNow": false,
   "panels": [
     {
-      "type": "stat",
-      "title": "Total Estimated Profit (USD)",
-      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "panels": [],
+      "title": "Hero Metrics",
+      "type": "row"
+    },
+    {
       "datasource": "Prometheus",
-      "targets": [
-        {
-          "expr": "sum(profit_estimated_total_usd)",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ],
+      "description": "Sum of estimated profits in the selected window.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red" },
+              { "color": "green", "value": 0 }
+            ]
+          },
+          "unit": "currencyUSD",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 4, "x": 0, "y": 1 },
+      "id": 2,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "center",
+        "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": ["last"],
           "fields": "",
           "values": false
-        }
-      }
-    },
-    {
-      "type": "gauge",
-      "title": "Capture Rate",
-      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
-      "datasource": "Prometheus",
+        },
+        "showPercentChange": false,
+        "text": {},
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.0",
       "targets": [
         {
-          "expr": "sum(plans_sent_total) / sum(plans_ready_total)",
-          "legendFormat": "",
+          "datasource": "Prometheus",
+          "editorMode": "code",
+          "expr": "sum(increase(profit_estimated_total_usd{chain=~\"$chain\", mode=~\"$mode\"}[$timewindow]))",
+          "legendFormat": "Net profit"
+        }
+      ],
+      "title": "Net Profit (USD)",
+      "transformations": [],
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Plans sent vs ready over the window.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "orange", "value": 0.7 },
+              { "color": "green", "value": 0.9 }
+            ]
+          },
+          "unit": "percentunit",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 4, "x": 4, "y": 1 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["last"],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {},
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "editorMode": "code",
+          "expr": "sum(increase(plans_sent_total{chain=~\"$chain\"}[$timewindow])) / clamp_min(sum(increase(plans_ready_total{chain=~\"$chain\"}[$timewindow])), 1)",
+          "legendFormat": "Capture"
+        }
+      ],
+      "title": "Capture Rate",
+      "transformations": [],
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Plans the simulator marked ready within the selected window.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue" }
+            ]
+          },
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 4, "x": 8, "y": 1 },
+      "id": 21,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["last"],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {},
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "editorMode": "code",
+          "expr": "sum(increase(plans_ready_total{chain=~\"$chain\"}[$timewindow]))",
+          "legendFormat": "Ready"
+        }
+      ],
+      "title": "Plans Ready",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "How many liquidations were actually broadcast.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "dark-blue" }
+            ]
+          },
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 4, "x": 12, "y": 1 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["last"],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {},
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "editorMode": "code",
+          "expr": "sum(increase(plans_sent_total{chain=~\"$chain\"}[$timewindow]))",
+          "legendFormat": "Sent"
+        }
+      ],
+      "title": "Plans Sent",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Errors vs total attempts in the window.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "orange", "value": 0.05 },
+              { "color": "red", "value": 0.1 }
+            ]
+          },
+          "unit": "percentunit",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 4, "x": 16, "y": 1 },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["last"],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {},
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "editorMode": "code",
+          "expr": "sum(increase(plans_error_total{chain=~\"$chain\"}[$timewindow])) / clamp_min(sum(increase(plans_sent_total{chain=~\"$chain\"}[$timewindow]) + increase(plans_error_total{chain=~\"$chain\"}[$timewindow])), 1)",
+          "legendFormat": "Fail rate"
+        }
+      ],
+      "title": "Fail Rate",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Average pnl/gas observed over the window.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "green", "value": 2 }
+            ]
+          },
+          "unit": "none",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 4, "x": 20, "y": 1 },
+      "id": 6,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["last"],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {},
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "editorMode": "code",
+          "expr": "avg_over_time(pnl_per_gas[$timewindow])",
+          "legendFormat": "pnl/gas"
+        }
+      ],
+      "title": "Avg PnL per Gas",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "id": 7,
+      "panels": [],
+      "title": "Trendlines",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Hourly profit pace per chain.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green" }
+            ]
+          },
+          "unit": "currencyUSD",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 10 },
+      "id": 8,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "editorMode": "code",
+          "expr": "sum by (chain) (rate(profit_estimated_total_usd{chain=~\"$chain\", mode=~\"$mode\"}[$__rate_interval]) * 3600)",
+          "legendFormat": "{{chain}}"
+        }
+      ],
+      "title": "Profit Rate (USD/h)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Compare plan lifecycle stages.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [ { "color": "green" } ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 10 },
+      "id": 9,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "stacking": { "group": "A", "mode": "normal" }
+      },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(increase(plans_ready_total{chain=~\"$chain\"}[$__rate_interval]))",
+          "legendFormat": "Ready"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(increase(plans_sent_total{chain=~\"$chain\"}[$__rate_interval]))",
+          "legendFormat": "Sent"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(increase(plans_error_total{chain=~\"$chain\"}[$__rate_interval]))",
+          "legendFormat": "Error"
+        }
+      ],
+      "title": "Plan Funnel",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Sequencer fallback triggers per chain.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red" } ] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 19 },
+      "id": 10,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "increase(candidates_sequencer_skip_total{chain=~\"$chain\"}[$__rate_interval])",
+          "legendFormat": "{{chain}}"
+        }
+      ],
+      "title": "Sequencer Health",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "RPC error spikes segmented by provider/target.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "orange" } ] },
+          "unit": "wps"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 19 },
+      "id": 11,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "rate(rpc_errors_total{target!~''}[5m])",
+          "legendFormat": "{{target}} :: {{operation}}"
+        }
+      ],
+      "title": "RPC Error Rate",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 28 },
+      "id": 12,
+      "panels": [],
+      "title": "Skips & Taxonomy",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Gap skip breakdown (last 24h).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green" } ] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 8, "x": 0, "y": 29 },
+      "id": 13,
+      "options": {
+        "legend": { "displayMode": "hidden", "placement": "right", "showLegend": false },
+        "orientation": "horizontal",
+        "showValue": "always",
+        "valueOptions": { "decimals": 0 }
+      },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "pg_custom_liquidation_attempts_gap_reason_24h",
+          "legendFormat": "{{reason}}"
+        }
+      ],
+      "title": "Gap Skips (Top)",
+      "type": "barchart"
+    },
+    {
+      "datasource": "Liquidations DB",
+      "description": "Gap & policy skips by asset over 24h.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "displayMode": "auto" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green" } ] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 16, "x": 8, "y": 29 },
+      "id": 14,
+      "options": {
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"] },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": "Liquidations DB",
+          "format": "table",
+          "refId": "A",
+          "rawSql": "SELECT details->'candidate'->'debt'->>'symbol' AS debt,\n       details->'candidate'->'collateral'->>'symbol' AS collateral,\n       status,\n       reason,\n       COUNT(*) AS attempts\nFROM liquidation_attempts\nWHERE status IN ('gap_skip','policy_skip')\n  AND created_at >= now() - interval '24 hours'\nGROUP BY 1,2,3,4\nORDER BY attempts DESC\nLIMIT 40;"
+        }
+      ],
+      "title": "Skip Taxonomy",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 38 },
+      "id": 15,
+      "panels": [],
+      "title": "Drill-down",
+      "type": "row"
+    },
+    {
+      "datasource": "Liquidations DB",
+      "description": "Latest attempts with explorer hash when available.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "displayMode": "auto" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green" } ] }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "tx_hash" },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "View transaction",
+                    "url": "https://explorer.family/tx/${__value.raw}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 39 },
+      "id": 16,
+      "options": {
+        "footer": { "countRows": false, "fields": "", "reducer": [] },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": "Liquidations DB",
+          "format": "table",
+          "rawSql": "SELECT created_at, chain_id, borrower, status, COALESCE(reason,'') AS reason, COALESCE(tx_hash,'') AS tx_hash\nFROM liquidation_attempts\nORDER BY created_at DESC\nLIMIT 50;",
           "refId": "A"
         }
       ],
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "max": 1,
-        "min": 0,
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "thresholds": {
-          "mode": "absolute",
-          "steps": [
-            { "color": "red", "value": 0 },
-            { "color": "yellow", "value": 0.7 },
-            { "color": "green", "value": 0.9 }
-          ]
-        }
-      }
+      "title": "Latest Attempts",
+      "type": "table"
     },
     {
-      "type": "timeseries",
-      "title": "Profit Rate (USD/h)",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
-      "datasource": "Prometheus",
+      "datasource": "Liquidations DB",
+      "description": "Highest volume borrowers over the last 6h.",
       "fieldConfig": {
         "defaults": {
-          "unit": "usd"
+          "custom": { "align": "auto", "displayMode": "auto" }
         },
         "overrides": []
       },
+      "gridPos": { "h": 9, "w": 6, "x": 12, "y": 39 },
+      "id": 17,
       "options": {
-        "legend": { "displayMode": "table", "placement": "bottom" },
-        "tooltip": { "mode": "multi" }
+        "footer": { "countRows": false, "fields": "", "reducer": [] },
+        "showHeader": true
       },
       "targets": [
         {
-          "expr": "sum by (chain)(rate(profit_estimated_total_usd[5m]) * 3600)",
-          "legendFormat": "{{chain}}",
+          "datasource": "Liquidations DB",
+          "format": "table",
+          "rawSql": "SELECT borrower, COUNT(*) AS attempts\nFROM liquidation_attempts\nWHERE created_at >= now() - interval '6 hours'\nGROUP BY borrower\nORDER BY attempts DESC\nLIMIT 25;",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Top Borrowers (6h)",
+      "type": "table"
     },
     {
-      "type": "timeseries",
-      "title": "Failure Rate",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
-      "datasource": "Prometheus",
+      "datasource": "Liquidations DB",
+      "description": "Dry-run vs live counts to monitor transitions.",
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit"
+          "custom": { "align": "auto", "displayMode": "auto" }
         },
         "overrides": []
       },
+      "gridPos": { "h": 9, "w": 6, "x": 18, "y": 39 },
+      "id": 18,
       "options": {
-        "legend": { "displayMode": "table", "placement": "bottom" }
+        "footer": { "countRows": false, "fields": "", "reducer": [] },
+        "showHeader": true
       },
       "targets": [
         {
-          "expr": "avg_over_time(plans_failure_rate[5m])",
-          "legendFormat": "{{chain}}",
+          "datasource": "Liquidations DB",
+          "format": "table",
+          "rawSql": "SELECT mode, COUNT(*) AS attempts\nFROM (SELECT CASE WHEN status = 'dry_run' THEN 'dry-run' ELSE 'live' END AS mode\n      FROM liquidation_attempts\n      WHERE created_at >= now() - interval '24 hours') t\nGROUP BY mode\nORDER BY attempts DESC;",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Mode Breakdown (24h)",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 48 },
+      "id": 19,
+      "panels": [],
+      "title": "Logs",
+      "type": "row"
+    },
+    {
+      "datasource": "Loki",
+      "description": "Recent warnings & errors from orchestrator / dry-run logs.",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 49 },
+      "id": 20,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": "Loki",
+          "expr": "{job=~\"dryrun|orchestrator\"} |~ \"\\\"level\\\":\\\"(warn|error|fatal)\\\"\"",
+          "refId": "A"
+        }
+      ],
+      "title": "Warn/Error Logs",
+      "type": "logs"
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
   "style": "dark",
-  "tags": ["liquidator", "ops"],
-  "templating": { "list": [] },
-  "time": {
-    "from": "now-6h",
-    "to": "now"
+  "tags": ["founder", "ops"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": ["All"], "value": ["$__all"] },
+        "datasource": "Prometheus",
+        "definition": "label_values(plans_ready_total, chain)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Chain",
+        "multi": true,
+        "name": "chain",
+        "options": [],
+        "query": "label_values(plans_ready_total, chain)",
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": "Prometheus",
+        "definition": "label_values(profit_estimated_total_usd, mode)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Mode",
+        "multi": false,
+        "name": "mode",
+        "options": [],
+        "query": "label_values(profit_estimated_total_usd, mode)",
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "auto": false,
+        "auto_count": 30,
+        "auto_min": "1m",
+        "current": { "selected": true, "text": "24h", "value": "24h" },
+        "hide": 0,
+        "label": "Window",
+        "name": "timewindow",
+        "options": [
+          { "selected": false, "text": "1h", "value": "1h" },
+          { "selected": false, "text": "6h", "value": "6h" },
+          { "selected": true, "text": "24h", "value": "24h" },
+          { "selected": false, "text": "3d", "value": "72h" },
+          { "selected": false, "text": "7d", "value": "168h" }
+        ],
+        "query": "1h,6h,24h,72h,168h",
+        "refresh": 2,
+        "type": "interval"
+      }
+    ]
   },
+  "time": { "from": "now-24h", "to": "now" },
   "timepicker": {},
   "timezone": "",
   "title": "Founder Ops",
   "uid": "founder-ops",
-  "version": 1
+  "version": 1,
+  "weekStart": ""
 }
