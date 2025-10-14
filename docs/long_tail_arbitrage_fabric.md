@@ -78,6 +78,8 @@ DENYLIST_TOKENS=...   # fill with venue-specific token blocks
 - Maintain private relay relationships and rotate endpoints to avoid inclusion drift.
 - Schedule weekly post-mortems on reverts and slippage outliers; feed insights back into solver thresholds.
 - Treat cross-chain legs as optional upside; never depend on synchronous bridging when spread barely clears fees.
+- Monitor bridge intents emitted as `fabric-bridge-request` logs; action them via treasury automation or disable affected pairs if floats run dry.
+- Bridge automation: each intent is written to `logs/fabric_bridge_intents.jsonl` and optionally POSTed to `FABRIC_BRIDGE_WEBHOOK`; plug your treasury bot into this feed to rebalance floats automatically.
 
 ## Naming & References
 - **Strategy**: “Long-Tail Arbitrage Fabric” or “LAF.”
@@ -93,7 +95,8 @@ DENYLIST_TOKENS=...   # fill with venue-specific token blocks
 - Toggle execution behaviour via `global.mode` (`census`, `active`, `inventory` placeholder). Adjust `slippageBps`, `deadlineBufferSec`, and `maxConcurrentExecutions` under `global` for production tuning.
 - Control solver fan-out with `maxVenuesPerLeg` to sample multiple pools per leg when hunting for loops.
 - Ensure RPC env vars (`RPC_ARB`, `RPC_OP`, `RPC_BASE`), private endpoints, and per-chain wallet keys are present before moving beyond census.
-- Feature toggles: set `enableSingleHop`, `enableTriangular`, and `enableCrossChain` in `fabric.config.yaml` to control solver activation. Triangular loops currently log in census mode; executor support is planned once multi-leg bundling is ready.
+- Feature toggles: set `enableSingleHop`, `enableTriangular`, and `enableCrossChain` in `fabric.config.yaml` to control solver activation. Triangular loops execute via the shared bundle builder; cross-chain remains census-only until bridge routing is productionised.
 - Offline validation: use `npm run laf:replay -- --file logs/laf.jsonl` to replay census output, compute per-source net, and flag pairs worth enabling.
+- Atomic execution is driven by the new bundle builder inside `FabricExecutor`, which collapses single-hop and triangular legs into a single Uniswap v3 `exactInput` call; keep all legs on the same chain and supply `feeBps` metadata so the path encoder can assemble the route.
 
 Keep this document updated as modules ship so “LAF” remains a single source of truth for configuration, rollout status, and lessons learned.

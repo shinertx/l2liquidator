@@ -48,9 +48,9 @@ Work items:
 **Focus:** Aave fork with cross-chain features; similar math but new addresses & incentives.
 
 - **Work items:**
-  - [ ] Indexer: Radiant subgraph/API integration, or adapt aave indexer with new schema.
+  - [x] Indexer: Radiant subgraph/API integration, or adapt aave indexer with new schema.
   - [x] Config: scaffold Radiant markets/tokens on Arbitrum (disabled until adapter is implemented).
-  - [ ] Simulator: reuse Aave flash loan logic if compatible, else implement Radiant-specific liquidation contract call.
+  - [x] Simulator: reuse Aave flash loan logic if compatible, else implement Radiant-specific liquidation contract call.
   - [ ] Routing: include Camelot, Balancer, GMX pools as swap venues.
   - [ ] Execution: configure Radiant liquidator contract (deploy if necessary) and router allow-list.
   - [ ] QA: fork-test Radiant liquidations; ensure bridging of profit if required.

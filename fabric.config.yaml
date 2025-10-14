@@ -1,83 +1,167 @@
 global:
-  mode: census
-  pollIntervalMs: 1000
-  quoteIntervalMs: 3000
+  mode: live
+  pollIntervalMs: 600
+  quoteIntervalMs: 1500
   enableSingleHop: true
   enableTriangular: false
   enableCrossChain: false
-  minNetUsd: 1.0
-  pnlMultipleMin: 4.0
-  revertProbability: 0.01
-  inclusionTargetMs: 100
+  minNetUsd: 0.5
+  pnlMultipleMin: 1.3
+  revertProbability: 0.02
+  inclusionTargetMs: 150
   maxEdgeAgeMs: 15000
-  slippageBps: 30
+  slippageBps: 35
   deadlineBufferSec: 120
   maxConcurrentExecutions: 2
-  maxVenuesPerLeg: 1
+  maxVenuesPerLeg: 2
+
 chains:
   - chainId: 42161
     enabled: true
     nativeToken: WETH
-    treasuryFloatUsd: 2000
-    gasUnitsEstimate: 900000
+    treasuryFloatUsd: 6000
+    gasUnitsEstimate: 950000
     gasSafetyMultiplier: 1.25
     pairs:
-      - id: arb-weth-usdc
+      - id: arbitrum-weth-usdc
         symbol: WETH/USDC
+        chainId: 42161
         baseToken: WETH
         quoteToken: USDC
         tradeSize:
-          baseAmount: "0.25"
+          baseAmount: "0.5"
         venues:
           - id: univ3-500
-            label: UniV3 0.05%
             kind: uniswap_v3
             feeBps: 500
           - id: univ3-3000
-            label: UniV3 0.30%
             kind: uniswap_v3
             feeBps: 3000
+      - id: arbitrum-weth-usdt
+        symbol: WETH/USDT
+        chainId: 42161
+        baseToken: WETH
+        quoteToken: USDT
+        tradeSize:
+          baseAmount: "0.5"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+      - id: arbitrum-wbtc-usdc
+        symbol: WBTC/USDC
+        chainId: 42161
+        baseToken: WBTC
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "1.0"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+
   - chainId: 10
     enabled: true
     nativeToken: WETH
-    treasuryFloatUsd: 2000
+    treasuryFloatUsd: 5000
     gasUnitsEstimate: 900000
-    gasSafetyMultiplier: 1.3
+    gasSafetyMultiplier: 1.25
     pairs:
-      - id: op-weth-usdc
+      - id: optimism-weth-usdc
         symbol: WETH/USDC
+        chainId: 10
         baseToken: WETH
         quoteToken: USDC
         tradeSize:
-          baseAmount: "0.25"
+          baseAmount: "0.5"
         venues:
           - id: univ3-500
-            label: UniV3 0.05%
             kind: uniswap_v3
             feeBps: 500
           - id: univ3-3000
-            label: UniV3 0.30%
             kind: uniswap_v3
             feeBps: 3000
+      - id: optimism-weth-usdt
+        symbol: WETH/USDT
+        chainId: 10
+        baseToken: WETH
+        quoteToken: USDT
+        tradeSize:
+          baseAmount: "0.5"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+      - id: optimism-wbtc-usdc
+        symbol: WBTC/USDC
+        chainId: 10
+        baseToken: WBTC
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "1.0"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+
   - chainId: 8453
     enabled: true
     nativeToken: WETH
-    treasuryFloatUsd: 2000
-    gasUnitsEstimate: 900000
-    gasSafetyMultiplier: 1.3
+    treasuryFloatUsd: 4000
+    gasUnitsEstimate: 920000
+    gasSafetyMultiplier: 1.30
     pairs:
       - id: base-weth-usdc
         symbol: WETH/USDC
+        chainId: 8453
         baseToken: WETH
         quoteToken: USDC
         tradeSize:
-          baseAmount: "0.25"
+          baseAmount: "0.5"
         venues:
           - id: univ3-500
-            label: UniV3 0.05%
             kind: uniswap_v3
             feeBps: 500
-          - id: univ3-3000
-            label: UniV3 0.30%
+          - id: univ3-100
             kind: uniswap_v3
-            feeBps: 3000
+            feeBps: 100
+      - id: base-cbeth-usdc
+        symbol: cbETH/USDC
+        chainId: 8453
+        baseToken: cbETH
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "0.4"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-100
+            kind: uniswap_v3
+            feeBps: 100
+      - id: base-weth-wsteth
+        symbol: WETH/wstETH
+        chainId: 8453
+        baseToken: WETH
+        quoteToken: wstETH
+        tradeSize:
+          baseAmount: "0.4"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-100
+            kind: uniswap_v3
+            feeBps: 100

@@ -1,0 +1,38 @@
+[Unit]
+Description=L2 Liquidator Orchestrator - Aave v3 Liquidation Engine
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=benjaminjones
+WorkingDirectory=/home/benjaminjones/l2liquidator
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/home/benjaminjones/.nvm/versions/node/v20.11.0/bin"
+Environment="NODE_ENV=production"
+EnvironmentFile=/home/benjaminjones/l2liquidator/.env
+
+# Restart on failure with exponential backoff
+Restart=always
+RestartSec=10s
+StartLimitInterval=300s
+StartLimitBurst=5
+
+# Resource limits
+MemoryMax=4G
+CPUQuota=200%
+
+# Logging
+StandardOutput=append:/home/benjaminjones/l2liquidator/logs/orchestrator.log
+StandardError=append:/home/benjaminjones/l2liquidator/logs/orchestrator.error.log
+
+# Start command
+ExecStart=/usr/bin/env bash /home/benjaminjones/l2liquidator/ops/systemd/start_orchestrator.sh
+
+# Graceful shutdown
+TimeoutStopSec=30s
+KillMode=mixed
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,182 @@
+[
+  {
+    "type": "function",
+    "name": "MORPHO",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "type": "address" }]
+  },
+  {
+    "type": "function",
+    "name": "PROVIDER",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "type": "address" }]
+  },
+  {
+    "type": "function",
+    "name": "ROUTER",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "type": "address" }]
+  },
+  {
+    "type": "function",
+    "name": "owner",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "type": "address" }]
+  },
+  {
+    "type": "function",
+    "name": "pendingOwner",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "type": "address" }]
+  },
+  {
+    "type": "function",
+    "name": "executors",
+    "stateMutability": "view",
+    "inputs": [{ "name": "", "type": "address" }],
+    "outputs": [{ "type": "bool" }]
+  },
+  {
+    "type": "function",
+    "name": "transferOwnership",
+    "stateMutability": "nonpayable",
+    "inputs": [{ "name": "newOwner", "type": "address" }],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "acceptOwnership",
+    "stateMutability": "nonpayable",
+    "inputs": [],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "setExecutor",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "exec", "type": "address" },
+      { "name": "allowed", "type": "bool" }
+    ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "setRouterAllowed",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "r", "type": "address" },
+      { "name": "a", "type": "bool" }
+    ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "setPaused",
+    "stateMutability": "nonpayable",
+    "inputs": [{ "name": "p", "type": "bool" }],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "setBeneficiary",
+    "stateMutability": "nonpayable",
+    "inputs": [{ "name": "b", "type": "address" }],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "liquidateWithFlash",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      {
+        "name": "p",
+        "type": "tuple",
+        "components": [
+          {
+            "name": "market",
+            "type": "tuple",
+            "components": [
+              { "name": "loanToken", "type": "address" },
+              { "name": "collateralToken", "type": "address" },
+              { "name": "oracle", "type": "address" },
+              { "name": "irm", "type": "address" },
+              { "name": "lltv", "type": "uint256" }
+            ]
+          },
+          { "name": "borrower", "type": "address" },
+          { "name": "repayAmount", "type": "uint256" },
+          { "name": "repayShares", "type": "uint256" },
+          { "name": "dexId", "type": "uint8" },
+          { "name": "router", "type": "address" },
+          { "name": "uniFee", "type": "uint24" },
+          { "name": "solidlyStable", "type": "bool" },
+          { "name": "solidlyFactory", "type": "address" },
+          { "name": "minProfit", "type": "uint256" },
+          { "name": "amountOutMin", "type": "uint256" },
+          { "name": "deadline", "type": "uint256" },
+          { "name": "path", "type": "bytes" },
+          { "name": "callbackData", "type": "bytes" }
+        ]
+      }
+    ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "liquidateWithFunds",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      {
+        "name": "p",
+        "type": "tuple",
+        "components": [
+          {
+            "name": "market",
+            "type": "tuple",
+            "components": [
+              { "name": "loanToken", "type": "address" },
+              { "name": "collateralToken", "type": "address" },
+              { "name": "oracle", "type": "address" },
+              { "name": "irm", "type": "address" },
+              { "name": "lltv", "type": "uint256" }
+            ]
+          },
+          { "name": "borrower", "type": "address" },
+          { "name": "repayAmount", "type": "uint256" },
+          { "name": "repayShares", "type": "uint256" },
+          { "name": "dexId", "type": "uint8" },
+          { "name": "router", "type": "address" },
+          { "name": "uniFee", "type": "uint24" },
+          { "name": "solidlyStable", "type": "bool" },
+          { "name": "solidlyFactory", "type": "address" },
+          { "name": "minProfit", "type": "uint256" },
+          { "name": "amountOutMin", "type": "uint256" },
+          { "name": "deadline", "type": "uint256" },
+          { "name": "path", "type": "bytes" },
+          { "name": "callbackData", "type": "bytes" }
+        ]
+      }
+    ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "paused",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "type": "bool" }]
+  },
+  {
+    "type": "function",
+    "name": "beneficiary",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "type": "address" }]
+  }
+]

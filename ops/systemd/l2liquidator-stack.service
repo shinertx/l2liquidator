@@ -1,0 +1,20 @@
+[Unit]
+Description=L2 Liquidator Core Docker Stack
+Requires=docker.service network-online.target
+After=docker.service network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/benjaminjones/l2liquidator
+EnvironmentFile=/home/benjaminjones/l2liquidator/.env
+Restart=always
+RestartSec=20s
+StandardOutput=append:/home/benjaminjones/l2liquidator/logs/docker-stack.log
+StandardError=append:/home/benjaminjones/l2liquidator/logs/docker-stack.error.log
+ExecStart=/usr/bin/docker compose up --no-color
+ExecStop=/usr/bin/docker compose down
+TimeoutStopSec=60s
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

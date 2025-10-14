@@ -1,3 +1,14 @@
+# Project Overviews
+
+This repository contains two complementary automated trading systems: the L2 Liquidator and the Long-Tail Arbitrage Fabric (LAF).
+
+*   **L2 Liquidator:** The goal is to profitably liquidate undercollateralized Aave v3 positions on L2 networks.
+*   **Long-Tail Arbitrage Fabric (LAF):** The goal is to generate profit by exploiting persistent price mispricings across a wide variety of assets and DEXes on L2s.
+
+These two systems share the same core infrastructure but operate on different opportunities. The Liquidator is highly specialized for Aave, while the LAF is a general-purpose arbitrage engine. They are designed to work together without conflict, maximizing overall profitability.
+
+---
+
 # Prime Directive
 
 Our primary directive is to build the world's most profitable and efficient liquidation engine. Every change must make the system smarter, faster, or more reliable, while relentlessly simplifying our architecture. We prize elegant, robust solutions and reject complexity that doesn't yield a significant, measurable return.

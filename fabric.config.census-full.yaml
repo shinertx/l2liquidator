@@ -1,0 +1,834 @@
+global:
+  mode: census
+  pollIntervalMs: 1000
+  quoteIntervalMs: 3000
+  enableSingleHop: true
+  enableTriangular: true
+  enableCrossChain: true
+  minNetUsd: 0.75
+  pnlMultipleMin: 1.5
+  revertProbability: 0.01
+  inclusionTargetMs: 100
+  maxEdgeAgeMs: 15000
+  slippageBps: 35
+  deadlineBufferSec: 120
+  maxConcurrentExecutions: 4
+  maxVenuesPerLeg: 2
+  quoterFailureBackoffMs: 120000
+  quoterFailureLogCooldownMs: 30000
+chains:
+  - chainId: 42161
+    enabled: true
+    nativeToken: WETH
+    treasuryFloatUsd: 6000
+    gasUnitsEstimate: 950000
+    gasSafetyMultiplier: 1.25
+    pairs:
+      - id: arbitrum-weth-usdc
+        symbol: WETH/USDC
+        chainId: 42161
+        baseToken: WETH
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "0.35"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: arbitrum-weth-usdt
+        symbol: WETH/USDT
+        chainId: 42161
+        baseToken: WETH
+        quoteToken: USDT
+        tradeSize:
+          baseAmount: "0.35"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: arbitrum-usdc-usdt
+        symbol: USDC/USDT
+        chainId: 42161
+        baseToken: USDC
+        quoteToken: USDT
+        tradeSize:
+          baseAmount: "1200"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: arbitrum-weth-dai
+        symbol: WETH/DAI
+        chainId: 42161
+        baseToken: WETH
+        quoteToken: DAI
+        tradeSize:
+          baseAmount: "0.30"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: arbitrum-dai-usdc
+        symbol: DAI/USDC
+        chainId: 42161
+        baseToken: DAI
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "1500"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: arbitrum-weth-arb
+        symbol: WETH/ARB
+        chainId: 42161
+        baseToken: WETH
+        quoteToken: ARB
+        tradeSize:
+          baseAmount: "0.28"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: arbitrum-arb-usdc
+        symbol: ARB/USDC
+        chainId: 42161
+        baseToken: ARB
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "1600"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: arbitrum-weth-wbtc
+        symbol: WETH/WBTC
+        chainId: 42161
+        baseToken: WETH
+        quoteToken: WBTC
+        tradeSize:
+          baseAmount: "0.35"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: arbitrum-wbtc-usdc
+        symbol: WBTC/USDC
+        chainId: 42161
+        baseToken: WBTC
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "1.0"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: arbitrum-weth-frax
+        symbol: WETH/FRAX
+        chainId: 42161
+        baseToken: WETH
+        quoteToken: FRAX
+        tradeSize:
+          baseAmount: "0.35"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: arbitrum-frax-usdc
+        symbol: FRAX/USDC
+        chainId: 42161
+        baseToken: FRAX
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "1500"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: arbitrum-weth-gho
+        symbol: WETH/GHO
+        chainId: 42161
+        baseToken: WETH
+        quoteToken: GHO
+        tradeSize:
+          baseAmount: "0.35"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: arbitrum-gho-usdc
+        symbol: GHO/USDC
+        chainId: 42161
+        baseToken: GHO
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "1500"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+  - chainId: 10
+    enabled: true
+    nativeToken: WETH
+    treasuryFloatUsd: 5000
+    gasUnitsEstimate: 900000
+    gasSafetyMultiplier: 1.25
+    pairs:
+      - id: optimism-weth-usdc
+        symbol: WETH/USDC
+        chainId: 10
+        baseToken: WETH
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "0.30"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: optimism-weth-usdt
+        symbol: WETH/USDT
+        chainId: 10
+        baseToken: WETH
+        quoteToken: USDT
+        tradeSize:
+          baseAmount: "0.30"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: optimism-usdc-usdt
+        symbol: USDC/USDT
+        chainId: 10
+        baseToken: USDC
+        quoteToken: USDT
+        tradeSize:
+          baseAmount: "1000"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: optimism-weth-dai
+        symbol: WETH/DAI
+        chainId: 10
+        baseToken: WETH
+        quoteToken: DAI
+        tradeSize:
+          baseAmount: "0.28"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: optimism-dai-usdc
+        symbol: DAI/USDC
+        chainId: 10
+        baseToken: DAI
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "1200"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: optimism-weth-op
+        symbol: WETH/OP
+        chainId: 10
+        baseToken: WETH
+        quoteToken: OP
+        tradeSize:
+          baseAmount: "0.25"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: optimism-op-usdc
+        symbol: OP/USDC
+        chainId: 10
+        baseToken: OP
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "1400"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: optimism-weth-wbtc
+        symbol: WETH/WBTC
+        chainId: 10
+        baseToken: WETH
+        quoteToken: WBTC
+        tradeSize:
+          baseAmount: "0.30"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: optimism-wbtc-usdc
+        symbol: WBTC/USDC
+        chainId: 10
+        baseToken: WBTC
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "0.8"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: optimism-weth-wsteth
+        symbol: WETH/wstETH
+        chainId: 10
+        baseToken: WETH
+        quoteToken: wstETH
+        tradeSize:
+          baseAmount: "0.30"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: optimism-wsteth-usdc
+        symbol: wstETH/USDC
+        chainId: 10
+        baseToken: wstETH
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "0.30"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.5
+        pnlMultipleMin: 1.5
+      - id: optimism-reth-weth
+        symbol: rETH/WETH
+        chainId: 10
+        baseToken: rETH
+        quoteToken: WETH
+        tradeSize:
+          baseAmount: "0.20"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.5
+        pnlMultipleMin: 1.5
+      - id: optimism-reth-usdc
+        symbol: rETH/USDC
+        chainId: 10
+        baseToken: rETH
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "0.20"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.5
+        pnlMultipleMin: 1.5
+  - chainId: 8453
+    enabled: true
+    nativeToken: WETH
+    treasuryFloatUsd: 4500
+    gasUnitsEstimate: 920000
+    gasSafetyMultiplier: 1.35
+    pairs:
+      - id: base-weth-usdc
+        symbol: WETH/USDC
+        chainId: 8453
+        baseToken: WETH
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "0.30"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: base-weth-usdbc
+        symbol: WETH/USDbC
+        chainId: 8453
+        baseToken: WETH
+        quoteToken: USDbC
+        tradeSize:
+          baseAmount: "0.30"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: base-usdc-usdbc
+        symbol: USDC/USDbC
+        chainId: 8453
+        baseToken: USDC
+        quoteToken: USDbC
+        tradeSize:
+          baseAmount: "1200"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+        minNetUsd: 0.5
+        pnlMultipleMin: 1.5
+      - id: base-weth-cbeth
+        symbol: WETH/cbETH
+        chainId: 8453
+        baseToken: WETH
+        quoteToken: cbETH
+        tradeSize:
+          baseAmount: "0.25"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: base-cbeth-usdc
+        symbol: cbETH/USDC
+        chainId: 8453
+        baseToken: cbETH
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "0.25"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.5
+        pnlMultipleMin: 1.5
+      - id: base-weth-wsteth
+        symbol: WETH/wstETH
+        chainId: 8453
+        baseToken: WETH
+        quoteToken: wstETH
+        tradeSize:
+          baseAmount: "0.25"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: base-wsteth-usdc
+        symbol: wstETH/USDC
+        chainId: 8453
+        baseToken: wstETH
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "0.25"
+        venues:
+          - id: univ3-100
+            kind: uniswap_v3
+            feeBps: 100
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+        minNetUsd: 0.5
+        pnlMultipleMin: 1.5
+      - id: base-weth-weeth
+        symbol: WETH/weETH
+        chainId: 8453
+        baseToken: WETH
+        quoteToken: weETH
+        tradeSize:
+          baseAmount: "0.25"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: base-weeth-usdc
+        symbol: weETH/USDC
+        chainId: 8453
+        baseToken: weETH
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "0.25"
+        venues:
+          - id: univ3-100
+            kind: uniswap_v3
+            feeBps: 100
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+        minNetUsd: 0.5
+        pnlMultipleMin: 1.5
+      - id: base-weth-eurc
+        symbol: WETH/EURC
+        chainId: 8453
+        baseToken: WETH
+        quoteToken: EURC
+        tradeSize:
+          baseAmount: "0.25"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.8
+        pnlMultipleMin: 1.5
+      - id: base-eurc-usdc
+        symbol: EURC/USDC
+        chainId: 8453
+        baseToken: EURC
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "1000"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.8
+        pnlMultipleMin: 1.5
+      - id: base-weth-gho
+        symbol: WETH/GHO
+        chainId: 8453
+        baseToken: WETH
+        quoteToken: GHO
+        tradeSize:
+          baseAmount: "0.25"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.8
+        pnlMultipleMin: 1.5
+      - id: base-gho-usdc
+        symbol: GHO/USDC
+        chainId: 8453
+        baseToken: GHO
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "1000"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.8
+        pnlMultipleMin: 1.5
+  - chainId: 137
+    enabled: true
+    nativeToken: WETH
+    treasuryFloatUsd: 4000
+    gasUnitsEstimate: 1100000
+    gasSafetyMultiplier: 1.4
+    pairs:
+      - id: polygon-weth-usdc
+        symbol: WETH/USDC
+        chainId: 137
+        baseToken: WETH
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "0.35"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: polygon-weth-usdt
+        symbol: WETH/USDT
+        chainId: 137
+        baseToken: WETH
+        quoteToken: USDT
+        tradeSize:
+          baseAmount: "0.35"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: polygon-usdc-usdt
+        symbol: USDC/USDT
+        chainId: 137
+        baseToken: USDC
+        quoteToken: USDT
+        tradeSize:
+          baseAmount: "1500"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: polygon-weth-dai
+        symbol: WETH/DAI
+        chainId: 137
+        baseToken: WETH
+        quoteToken: DAI
+        tradeSize:
+          baseAmount: "0.30"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: polygon-dai-usdc
+        symbol: DAI/USDC
+        chainId: 137
+        baseToken: DAI
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "1500"
+        venues:
+          - id: univ3-500
+            kind: uniswap_v3
+            feeBps: 500
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: polygon-weth-wmatic
+        symbol: WETH/WMATIC
+        chainId: 137
+        baseToken: WETH
+        quoteToken: WMATIC
+        tradeSize:
+          baseAmount: "0.30"
+        venues:
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: polygon-wmatic-usdc
+        symbol: WMATIC/USDC
+        chainId: 137
+        baseToken: WMATIC
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "2000"
+        venues:
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: polygon-weth-wbtc
+        symbol: WETH/WBTC
+        chainId: 137
+        baseToken: WETH
+        quoteToken: WBTC
+        tradeSize:
+          baseAmount: "0.35"
+        venues:
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: polygon-wbtc-usdc
+        symbol: WBTC/USDC
+        chainId: 137
+        baseToken: WBTC
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "1.0"
+        venues:
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.75
+        pnlMultipleMin: 1.5
+      - id: polygon-weth-link
+        symbol: WETH/LINK
+        chainId: 137
+        baseToken: WETH
+        quoteToken: LINK
+        tradeSize:
+          baseAmount: "0.25"
+        venues:
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.8
+        pnlMultipleMin: 1.5
+      - id: polygon-link-usdc
+        symbol: LINK/USDC
+        chainId: 137
+        baseToken: LINK
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "0.25"
+        venues:
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.8
+        pnlMultipleMin: 1.5
+      - id: polygon-weth-bal
+        symbol: WETH/BAL
+        chainId: 137
+        baseToken: WETH
+        quoteToken: BAL
+        tradeSize:
+          baseAmount: "0.25"
+        venues:
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.8
+        pnlMultipleMin: 1.5
+      - id: polygon-bal-usdc
+        symbol: BAL/USDC
+        chainId: 137
+        baseToken: BAL
+        quoteToken: USDC
+        tradeSize:
+          baseAmount: "0.25"
+        venues:
+          - id: univ3-3000
+            kind: uniswap_v3
+            feeBps: 3000
+        minNetUsd: 0.8
+        pnlMultipleMin: 1.5

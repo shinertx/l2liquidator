@@ -1,0 +1,18 @@
+[Unit]
+Description=L2 Liquidator Health Monitor
+After=l2liquidator-orchestrator.service l2liquidator-fabric.service l2liquidator-stack.service
+Requires=l2liquidator-stack.service
+
+[Service]
+Type=simple
+User=benjaminjones
+WorkingDirectory=/home/benjaminjones/l2liquidator
+EnvironmentFile=/home/benjaminjones/l2liquidator/.env
+Restart=always
+RestartSec=15s
+StandardOutput=append:/home/benjaminjones/l2liquidator/logs/health-monitor.service.log
+StandardError=append:/home/benjaminjones/l2liquidator/logs/health-monitor.service.error.log
+ExecStart=/usr/bin/env bash /home/benjaminjones/l2liquidator/ops/health_monitor.sh
+
+[Install]
+WantedBy=multi-user.target

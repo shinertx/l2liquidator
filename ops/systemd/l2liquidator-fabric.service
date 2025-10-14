@@ -1,0 +1,41 @@
+[Unit]
+Description=L2 Long-Tail Arbitrage Fabric - DEX Arbitrage Engine
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=benjaminjones
+WorkingDirectory=/home/benjaminjones/l2liquidator
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/home/benjaminjones/.nvm/versions/node/v20.11.0/bin"
+Environment="NODE_ENV=production"
+Environment="FABRIC_CONFIG=/home/benjaminjones/l2liquidator/fabric.config.yaml"
+Environment="FABRIC_PROM_PORT=9470"
+Environment="IS_FABRIC=1"
+EnvironmentFile=/home/benjaminjones/l2liquidator/.env
+
+# Restart on failure with exponential backoff
+Restart=always
+RestartSec=10s
+StartLimitInterval=300s
+StartLimitBurst=5
+
+# Resource limits
+MemoryMax=4G
+CPUQuota=200%
+
+# Logging
+StandardOutput=append:/home/benjaminjones/l2liquidator/logs/fabric.log
+StandardError=append:/home/benjaminjones/l2liquidator/logs/fabric.error.log
+
+# Start command
+ExecStart=/usr/bin/env bash /home/benjaminjones/l2liquidator/ops/systemd/start_fabric.sh
+
+# Graceful shutdown
+TimeoutStopSec=30s
+KillMode=mixed
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

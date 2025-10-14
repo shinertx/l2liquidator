@@ -1,0 +1,16 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: founder-webhook
+  group_by: ['alertname']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 2h
+
+receivers:
+  - name: founder-webhook
+    webhook_configs:
+      - url: ${SLACK_ALERT_WEBHOOK}
+        send_resolved: true
+# Replace with a rotated webhook if you need to move channels.
