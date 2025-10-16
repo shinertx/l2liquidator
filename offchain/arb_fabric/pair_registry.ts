@@ -5,6 +5,7 @@ import type { AppConfig, ChainCfg, TokenInfo } from '../infra/config';
 import { getPublicClient } from '../infra/rpc_clients';
 import { log } from '../infra/logger';
 import { parseTokenAmount } from './utils';
+import { gauge } from '../infra/metrics';
 
 const UNISWAP_V3_FACTORY = '0x1F98431c8aD98523631AE4a59f267346ea31F984';
 
@@ -77,14 +78,25 @@ export class PairRegistry {
 
   async init(): Promise<void> {
     this.pairs.length = 0;
+    (gauge.fabricPairsConfigured as any).reset?.();
+    (gauge.fabricPairsReady as any).reset?.();
+
+    const configuredCounts = new Map<number, number>();
+    const readyCounts = new Map<number, number>();
+    const chainNames = new Map<number, string>();
+
     for (const chainCfg of this.fabric.chains) {
       if (!chainCfg.enabled) continue;
       const chain = chainCfgOrThrow(this.app, chainCfg.chainId);
+      chainNames.set(chain.id, chain.name);
+      configuredCounts.set(chain.id, chainCfg.pairs.length);
+      readyCounts.set(chain.id, 0);
       const baseClient = getPublicClient(chain);
       for (const pair of chainCfg.pairs) {
         try {
           const runtime = await this.buildPairRuntime(chainCfg, pair, chain, baseClient);
           this.pairs.push(runtime);
+          readyCounts.set(chain.id, (readyCounts.get(chain.id) ?? 0) + 1);
           log.info(
             {
               chainId: chain.id,
@@ -100,6 +112,13 @@ export class PairRegistry {
       }
     }
     log.info({ pairs: this.pairs.length }, 'fabric-pair-registry-ready');
+
+    for (const [chainId, configured] of configuredCounts.entries()) {
+      const chainName = chainNames.get(chainId) ?? String(chainId);
+      const ready = readyCounts.get(chainId) ?? 0;
+      gauge.fabricPairsConfigured.labels({ chain: chainName }).set(configured);
+      gauge.fabricPairsReady.labels({ chain: chainName }).set(ready);
+    }
   }
 
   getPairs(): readonly PairRuntime[] {

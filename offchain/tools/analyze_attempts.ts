@@ -4,6 +4,15 @@ import { waitForDb, db } from '../infra/db';
 
 type ArgMap = Record<string, string | boolean>;
 
+type GapRow = {
+  chain_id: number;
+  debt: string;
+  collateral: string;
+  count: number;
+  avg_gap_bps: string | null;
+  latest_id: number;
+};
+
 function parseArgs(argv: string[]): ArgMap {
   const out: ArgMap = {};
   for (let i = 0; i < argv.length; i += 1) {
@@ -34,6 +43,8 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const minutes = Number(args.minutes ?? 60);
   const rowsLimit = Number(args.limit ?? 50);
+  const showGapStats = Boolean(args.gaps);
+  const gapLimit = Number(args['gaps-limit'] ?? 10);
   const interval = toInterval(minutes);
 
   await waitForDb();
@@ -89,6 +100,39 @@ async function main() {
   if (planNullRow && planNullRow.count > 0) {
     console.log('\nPlan-null diagnostics:');
     console.table([planNullRow]);
+  }
+
+  if (showGapStats) {
+    const gapSql = `
+      SELECT
+        chain_id,
+        details->'candidate'->'debt'->>'symbol' AS debt,
+        details->'candidate'->'collateral'->>'symbol' AS collateral,
+        COUNT(*)::int AS count,
+        AVG( regexp_replace(reason, '[^0-9]', '', 'g')::int )::numeric(10,2) AS avg_gap_bps,
+        MAX(id) AS latest_id
+      FROM liquidation_attempts
+      WHERE created_at >= NOW() - $1::interval
+        AND status = 'gap_skip'
+      GROUP BY 1,2,3
+      ORDER BY count DESC
+      LIMIT $2
+    `;
+    const gapRes = await db.query(gapSql, [interval, gapLimit]);
+    if (gapRes.rows.length) {
+      console.log(`\nGap hotspots (top ${gapLimit} by attempts):`);
+      console.table(
+        gapRes.rows.map((row: GapRow) => ({
+          chainId: row.chain_id,
+          pair: `${row.debt}->${row.collateral}`,
+          count: row.count,
+          avgGapBps: row.avg_gap_bps == null ? null : Number(row.avg_gap_bps),
+          latestId: row.latest_id,
+        }))
+      );
+    } else {
+      console.log('\nNo gap_skip records in this window.');
+    }
   }
 
   console.log('\nUsage: npm run analyze:attempts -- --minutes 15 --limit 20');

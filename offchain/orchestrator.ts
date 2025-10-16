@@ -59,7 +59,42 @@ const POLICY_RETRY_BASE_DELAY_MS = Math.max(1_000, Number(process.env.POLICY_RET
 const POLICY_RETRY_MAX_DELAY_MS = Math.max(POLICY_RETRY_BASE_DELAY_MS, Number(process.env.POLICY_RETRY_MAX_DELAY_MS ?? 60_000));
 const POLICY_RETRY_HF_MARGIN = Math.max(0, Number(process.env.POLICY_RETRY_HF_MARGIN ?? 0.06));
 const POLICY_RETRY_JITTER_MS = Math.max(0, Number(process.env.POLICY_RETRY_JITTER_MS ?? 1_000));
+const POLICY_RETRY_RESCHEDULE_GUARD_MS = Math.max(0, Number(process.env.POLICY_RETRY_RESCHEDULE_GUARD_MS ?? 5_000));
+const POLICY_RETRY_IMPROVEMENT_EPS = Math.max(0, Number(process.env.POLICY_RETRY_IMPROVEMENT_EPS ?? 0.005));
+const PEGGED_GAP_CAP_BPS = Number(process.env.PEGGED_GAP_CAP_BPS ?? 120);
 const MISSING_PLACEHOLDER = '\u0000MISSING:';
+
+function normalizeTokenSymbol(symbol?: string): string | null {
+  if (!symbol) return null;
+  return symbol.replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+}
+
+const PEGGED_PAIR_KEYS = new Set([
+  'ETH-WSTETH',
+  'WETH-WSTETH',
+  'WSTETH-WETH',
+  'WETH-RETH',
+  'RETH-WETH',
+  'WETH-CBETH',
+  'CBETH-WETH',
+  'WETH-SFRXETH',
+  'SFRXETH-WETH',
+  'WMATIC-MATICX',
+  'MATICX-WMATIC',
+  'WPOL-MATICX',
+  'MATICX-WPOL',
+]);
+
+function isPeggedPairSymbol(a?: string, b?: string): boolean {
+  const na = normalizeTokenSymbol(a);
+  const nb = normalizeTokenSymbol(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const forward = `${na}-${nb}`;
+  if (PEGGED_PAIR_KEYS.has(forward)) return true;
+  const reverse = `${nb}-${na}`;
+  return PEGGED_PAIR_KEYS.has(reverse);
+}
 
 type CandidateStreamState = {
   iterator: AsyncIterator<Candidate>;
@@ -212,7 +247,11 @@ async function inventoryBalance(
 }
 
 function summarizeRouteCoverage(cfg: AppConfig): void {
+  (gauge.routeOptions as any).reset?.();
+  (gauge.protocolMarkets as any).reset?.();
+
   const warnings: Array<{ chain: string; pair: string; routes: string[]; reason: string }> = [];
+  const protocolCounts = new Map<string, number>();
   for (const market of cfg.markets.filter((m) => m.enabled)) {
     const chain = cfg.chains.find((c) => c.id === market.chainId);
     if (!chain || !chain.enabled) continue;
@@ -242,6 +281,15 @@ function summarizeRouteCoverage(cfg: AppConfig): void {
         warnings.push({ chain: chain.name, pair, routes: routeTypes, reason: 'wpol-low-depth' });
       }
     }
+
+    const protocolLabel = market.protocol ?? 'unknown';
+    const key = `${protocolLabel}::${chain.name}`;
+    protocolCounts.set(key, (protocolCounts.get(key) ?? 0) + 1);
+  }
+
+  for (const [key, count] of protocolCounts.entries()) {
+    const [protocol, chain] = key.split('::');
+    gauge.protocolMarkets.labels({ protocol, chain }).set(count);
   }
 
   for (const warning of warnings) {
@@ -392,6 +440,21 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
     if (POLICY_RETRY_MAX_ATTEMPTS === 0) return;
     const key = `${chain.id}:${borrower}`;
     const existing = policyRetryQueue.get(key);
+    const now = Date.now();
+    if (existing) {
+      const hasMeaningfulImprovement =
+        existing.lastHealthFactor != null && hf < existing.lastHealthFactor - POLICY_RETRY_IMPROVEMENT_EPS;
+      if (!hasMeaningfulImprovement && existing.nextAttemptMs > now + POLICY_RETRY_RESCHEDULE_GUARD_MS) {
+        policyRetryQueue.set(key, {
+          ...existing,
+          lastHealthFactor: hf,
+          lastHfMax: hfMax,
+          protocol: existing.protocol ?? protocol,
+        });
+        agentLog.debug({ borrower, healthFactor: hf, hfMax, attempts: existing.attempts, guardMs: POLICY_RETRY_RESCHEDULE_GUARD_MS, source: label }, 'policy-retry-guarded');
+        return;
+      }
+    }
     const attempts = (existing?.attempts ?? 0) + 1;
     if (attempts > POLICY_RETRY_MAX_ATTEMPTS) {
       policyRetryQueue.delete(key);
@@ -622,9 +685,7 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
         if (routeOptions.length > 0) {
           try {
             const ratio = await dexPriceRatio({ client, chain, collateral: collateralToken, debt: debtToken, fee: gapFee, router: gapRouter });
-            const ELIGIBLE = new Set(['USDC', 'USDT', 'WETH', 'wstETH', 'WBTC', 'cbETH', 'rETH', 'sUSD', 'LUSD']);
-            const eligible = ELIGIBLE.has(debtTokenSymbol) || ELIGIBLE.has(collateralTokenSymbol);
-            if (eligible && ratio && Number.isFinite(ratio) && ratio > 0) {
+            if (ratio && Number.isFinite(ratio) && ratio > 0) {
               if (collPriceUsd == null && debtPriceUsd != null && debtPriceUsd > 0) {
                 collPriceUsd = debtPriceUsd * ratio;
                 agentLog.debug({ borrower: candidate.borrower, debt: candidate.debt.symbol, collateral: candidate.collateral.symbol, ratio, inferred: collPriceUsd }, 'price-fallback-dex-collateral');
@@ -667,7 +728,10 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
         router: gapRouter,
       });
       const baseHealthFactorMax = chain.risk?.healthFactorMax ?? cfg.risk.healthFactorMax ?? 0.98;
-      const baseGapCapBps = policy.gapCapBps ?? 100;
+      let baseGapCapBps = policy.gapCapBps ?? 100;
+      if (isPeggedPairSymbol(debtTokenSymbol, collateralTokenSymbol)) {
+        baseGapCapBps = Math.max(baseGapCapBps, PEGGED_GAP_CAP_BPS);
+      }
       const adaptive = await adaptiveThresholds.update({
         chainId: chain.id,
         chainName: chain.name,
@@ -739,7 +803,31 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
         healthFactor: healthFactor ?? Number.POSITIVE_INFINITY,
         hfMax,
       });
-      if ((healthFactor ?? 0) >= hfMax && !precommitEligible) {
+      const hfValue = healthFactor ?? Number.POSITIVE_INFINITY;
+      if (hfValue >= 1 && !precommitEligible) {
+        const hfReason = Number.isFinite(hfValue) ? hfValue.toFixed(4) : String(hfValue);
+        if (Number.isFinite(hfValue) && hfValue > 0) {
+          histogram.candidateHealthFactor.observe({ chain: chain.name, stage: 'policy_skip' }, hfValue);
+        }
+        await recordAttemptRow({
+          chainId: chain.id,
+          borrower: candidate.borrower,
+          status: 'policy_skip',
+          reason: `hf>=1 ${hfReason}`,
+          details: { candidate: candSnapshot },
+        });
+        if (throttleLimit > 0 && Number.isFinite(hfValue) && hfValue > 0) {
+          await recordThrottleAttempt(chain.id, candidate.borrower, 3600);
+        }
+        if (Number.isFinite(hfValue)) {
+          schedulePolicyRetry(candidate.borrower, hfValue, hfMax, source, protocolKey);
+        }
+        agentLog.debug({ borrower: candidate.borrower, healthFactor: hfValue, source }, 'skip-hf-at-or-above-one');
+        recordCandidateDrop(chain.name, 'hf_at_or_above_one');
+        return;
+      }
+
+      if (hfValue >= hfMax && !precommitEligible) {
         if (healthFactor !== null && Number.isFinite(healthFactor) && healthFactor > 0) {
           histogram.candidateHealthFactor.observe({ chain: chain.name, stage: 'policy_skip' }, healthFactor);
         }
@@ -804,7 +892,7 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
         debt: { ...debtToken, symbol: candidate.debt.symbol, amount: candidate.debt.amount },
         collateral: { ...collateralToken, symbol: candidate.collateral.symbol, amount: candidate.collateral.amount },
         closeFactor: (market.closeFactorBps ?? DEFAULT_CLOSE_FACTOR_BPS) / 10_000,
-        bonusBps: market.bonusBps ?? DEFAULT_BONUS_BPS,
+        bonusBps: market.bonusBps ?? DEFAULT_BONUS_BPS, // TODO: subtract Aave liquidationProtocolFee to pass the net bonus instead of the gross config value.
         routes: routeOptions,
         pricesUsd: { debt: debtPriceUsd, coll: collPriceUsd },
         policy,
@@ -1282,8 +1370,43 @@ async function main() {
     return;
   }
 
-  log.info({ chains: enabledChains.map(c => c.name) }, 'launching agents');
-  const agents = enabledChains.map(chain => runChainAgent(chain, cfg));
+  const chainFilterRaw = process.env.CHAIN_FILTER?.trim();
+  let chainsToRun = enabledChains;
+  if (chainFilterRaw) {
+    const requested = chainFilterRaw
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+
+    if (requested.length > 0) {
+      const lowerRequested = requested.map((entry) => entry.toLowerCase());
+      chainsToRun = enabledChains.filter((chain) => {
+        const nameMatch = lowerRequested.includes(chain.name.toLowerCase());
+        const idMatch = lowerRequested.includes(String(chain.id));
+        return nameMatch || idMatch;
+      });
+
+      const missing = requested.filter((entry) => {
+        const entryLower = entry.toLowerCase();
+        return !enabledChains.some(
+          (chain) =>
+            chain.name.toLowerCase() === entryLower || String(chain.id) === entryLower
+        );
+      });
+
+      if (missing.length > 0) {
+        log.warn({ requested, missing }, 'chain-filter-missing');
+      }
+
+      if (chainsToRun.length === 0) {
+        log.warn({ requested, enabled: enabledChains.map((chain) => chain.name) }, 'chain-filter-empty');
+        return;
+      }
+    }
+  }
+
+  log.info({ chains: chainsToRun.map((c) => c.name) }, 'launching agents');
+  const agents = chainsToRun.map((chain) => runChainAgent(chain, cfg));
   await Promise.all(agents);
   log.info('all agents finished');
 }

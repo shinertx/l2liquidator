@@ -119,10 +119,10 @@ export type FabricGlobalConfig = {
    * Maximum venues considered per leg when generating edges.
    */
   maxVenuesPerLeg?: number;
-    /**
-     * Multipliers applied to base trade size when sampling venue depth for price graph.
-     */
-    priceGraphDepthTiers?: number[];
+  /**
+   * Multipliers applied to base trade size when sampling venue depth for price graph.
+   */
+  priceGraphDepthTiers?: number[];
   /**
    * Cooldown before re-querying a venue-direction pair after a quoter failure (ms).
    */
@@ -131,6 +131,10 @@ export type FabricGlobalConfig = {
    * Cooldown between warning logs while a venue-direction pair is suppressed (ms).
    */
   quoterFailureLogCooldownMs?: number;
+  /**
+   * Maximum exponential backoff window applied after consecutive quoter failures (ms).
+   */
+  quoterFailureBackoffMaxMs?: number;
 };
 
 export type FabricConfig = {

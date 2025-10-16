@@ -19,8 +19,9 @@ export class SingleHopSolver {
   private readonly quoter: QuoterMesh;
   private stopped = false;
   private readonly quoterFailureBackoffMs: number;
+  private readonly quoterFailureBackoffMaxMs: number;
   private readonly quoterFailureLogCooldownMs: number;
-  private readonly suppressedVenues = new Map<string, { until: number; lastLog?: number }>();
+  private readonly suppressedVenues = new Map<string, { until: number; lastLog?: number; failCount: number }>();
 
   constructor(
     private readonly registry: PairRegistry,
@@ -29,6 +30,10 @@ export class SingleHopSolver {
   ) {
     this.quoter = new QuoterMesh(registry);
     this.quoterFailureBackoffMs = this.fabric.global.quoterFailureBackoffMs ?? 120_000;
+    const configuredMax = this.fabric.global.quoterFailureBackoffMaxMs;
+    this.quoterFailureBackoffMaxMs = configuredMax && configuredMax >= this.quoterFailureBackoffMs
+      ? configuredMax
+      : this.quoterFailureBackoffMs * 8;
     this.quoterFailureLogCooldownMs = this.fabric.global.quoterFailureLogCooldownMs ?? 30_000;
   }
 
@@ -67,7 +72,7 @@ export class SingleHopSolver {
       );
       return [];
     }
-  const baseOracle = await fetchOraclePriceUsd(client, pair.baseToken);
+    const baseOracle = await fetchOraclePriceUsd(client, pair.baseToken);
     if (!baseOracle.priceUsd || baseOracle.stale) {
       log.debug(
         { pairId: pair.config.id, base: pair.baseToken.address },
@@ -75,8 +80,8 @@ export class SingleHopSolver {
       );
       return [];
     }
-  const basePriceUsd = baseOracle.priceUsd ?? 0;
-  const gasPrice = await client.getGasPrice();
+    const basePriceUsd = baseOracle.priceUsd ?? 0;
+    const gasPrice = await client.getGasPrice();
     const gasUnits = BigInt(
       Math.ceil(pair.fabricChain.gasUnitsEstimate * (pair.fabricChain.gasSafetyMultiplier ?? 1.25)),
     );
@@ -182,19 +187,35 @@ export class SingleHopSolver {
     if (suppressed && suppressed.until > now) {
       if (!suppressed.lastLog || now - suppressed.lastLog >= this.quoterFailureLogCooldownMs) {
         log.debug(
-          { pairId: pair.config.id, venue: venue.config.id, untilMs: suppressed.until },
+          {
+            pairId: pair.config.id,
+            venue: venue.config.id,
+            untilMs: suppressed.until,
+            failCount: suppressed.failCount,
+          },
           'fabric-quoter-suppressed',
         );
         this.suppressedVenues.set(key, { ...suppressed, lastLog: now });
       }
       return { amountOut: 0n, sqrtPriceX96After: 0n, gasEstimate: 0n };
     }
+    if (suppressed && suppressed.until <= now) {
+      this.suppressedVenues.delete(key);
+    }
     try {
-      return await this.quoter.quoteExactInput(client, venue, amountIn, tokenIn, tokenOut);
+      const result = await this.quoter.quoteExactInput(client, venue, amountIn, tokenIn, tokenOut);
+      this.suppressedVenues.delete(key);
+      return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const until = now + this.quoterFailureBackoffMs;
-      this.suppressedVenues.set(key, { until, lastLog: now });
+      const previous = this.suppressedVenues.get(key);
+      const failCount = (previous?.failCount ?? 0) + 1;
+      const backoffMs = Math.min(
+        this.quoterFailureBackoffMs * Math.pow(2, failCount - 1),
+        this.quoterFailureBackoffMaxMs,
+      );
+      const until = now + backoffMs;
+      this.suppressedVenues.set(key, { until, lastLog: now, failCount });
       log.warn(
         {
           pairId: pair.config.id,
@@ -203,7 +224,8 @@ export class SingleHopSolver {
           tokenOut,
           err: message,
           retryAtMs: until,
-          backoffMs: this.quoterFailureBackoffMs,
+          backoffMs,
+          failCount,
         },
         'fabric-quoter-failure-backoff',
       );

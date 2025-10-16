@@ -314,6 +314,8 @@ export class CrossChainSolver {
               [buy.pair.chain.id]: buy.nativePriceUsd,
               [sell.pair.chain.id]: sell.nativePriceUsd,
             },
+            primaryPairId: buy.pair.config.id,
+            pairIds: [buy.pair.config.id, sell.pair.config.id],
           },
         });
       }

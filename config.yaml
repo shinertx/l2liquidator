@@ -19,10 +19,6 @@ chains:
       DAI:
         address: "0x6B175474E89094C44Da98b954EedeAC495271d0F"
         decimals: 18
-        chainlinkFeed: "0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9"
-      USDC:
-        address: "0xA0b86991C6218B36c1d19D4a2e9Eb0cE3606eB48"
-        decimals: 6
         chainlinkFeed: "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6"
       USDT:
         address: "0xdAC17F958D2ee523a2206206994597C13D831ec7"
@@ -398,6 +394,10 @@ assets:
     floorBps: 30
     gapCapBps: 50
     slippageBps: 50
+  DEGEN:
+    floorBps: 200
+    gapCapBps: 500
+    slippageBps: 150
   DPI:
     floorBps: 40
     gapCapBps: 90
@@ -414,6 +414,10 @@ assets:
     floorBps: 30
     gapCapBps: 50
     slippageBps: 50
+  eUSD:
+    floorBps: 30
+    gapCapBps: 60
+    slippageBps: 40
   ezETH:
     floorBps: 50
     gapCapBps: 110
@@ -422,6 +426,10 @@ assets:
     floorBps: 30
     gapCapBps: 50
     slippageBps: 50
+  FUSDC:
+    floorBps: 30
+    gapCapBps: 50
+    slippageBps: 40
   GHO:
     floorBps: 50
     gapCapBps: 110
@@ -458,6 +466,10 @@ assets:
     floorBps: 50
     gapCapBps: 110
     slippageBps: 60
+  msETH:
+    floorBps: 30
+    gapCapBps: 70
+    slippageBps: 30
   OP:
     floorBps: 40
     gapCapBps: 90
@@ -510,6 +522,10 @@ assets:
     floorBps: 50
     gapCapBps: 110
     slippageBps: 60
+  verUSDC:
+    floorBps: 999
+    gapCapBps: 999
+    slippageBps: 999
   wBTC:
     floorBps: 30
     gapCapBps: 60
@@ -542,6 +558,10 @@ assets:
     floorBps: 30
     gapCapBps: 70
     slippageBps: 30
+  wUSDM:
+    floorBps: 30
+    gapCapBps: 60
+    slippageBps: 40
 markets:
   - protocol: aavev3
     chainId: 10
@@ -3561,20 +3581,20 @@ markets:
     bonusBps: 500
     enabled: true
 risk:
-  gasCapUsd: 25
-  failRateCap: 0.35
-  pnlPerGasMin: 0.28
-  pnlMultMin: 1.5
-  maxAttemptsPerBorrowerHour: 180
+  gasCapUsd: 35
+  failRateCap: 0.4
+  pnlPerGasMin: 0.2
+  pnlMultMin: 1.2
+  maxAttemptsPerBorrowerHour: 0
   dryRun: false
-  healthFactorMax: 1.4
+  healthFactorMax: 1.55
   maxRepayUsd: 40000
   maxLiveExecutions: 200
-  maxSessionNotionalUsd: 150000
-  minNetUsd: 0.5
-  maxRevertRate: 0.03
+  maxSessionNotionalUsd: 180000
+  minNetUsd: 0.05
+  maxRevertRate: 0.05
   targetP95Ms: 80
-  chainSpendCapUsd: 8000
+  chainSpendCapUsd: 12000
   gasTopupMinUsd: 2000
   depegMode: false
   throttleBypassHfDrop: 0.015
@@ -3587,7 +3607,7 @@ indexer:
   subgraphFirst: 1000
   dedupeMs: 10000
   pollMs: 120
-  hfThreshold: 1.2
+  hfThreshold: 1.02
 routing:
   prefer:
     "10":
@@ -3653,6 +3673,9 @@ dexRouters:
       WETH: "0x4200000000000000000000000000000000000006"
   "137":
     uniV3: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+    uniV2:
+      - "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff"
+      - "0x1b02dA8Cb0d097eB8D57A175B88c7D8B47997506"
     tokens:
       USDC: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
       WETH: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619"
@@ -3667,6 +3690,8 @@ dexRouters:
   "42161":
     uniV3: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
     camelotV2: "0xc873fEcbd354f5A56E00E710B90EF4201db2448d"
+    uniV2:
+      - "0x1b02dA8Cb0d097eB8D57A175B88c7D8B47997506"
     tokens:
       USDC: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
       WETH: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"

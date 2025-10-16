@@ -191,4 +191,4 @@ redis-cli -p 6380 --raw keys 'laf:*'
 
 ---
 
-The micro-liquidator TODOs (protocol adapters, RFQ support, etc.) remain open in their respective modules and will be addressed separately. LAF-specific enhancements (additional venue support, cross-chain execution) live under `offchain/arb_fabric` and are tracked in the main backlog.
+Outstanding roadmap items: non-Aave adapters (Silo/Ionic) remain stubbed by design, and the RFQ/intent codec is still pending upstream contract support—keep large BTC/cbBTC clips capped until that lands. Fabric enhancements (additional venues, cross-chain execution) live under `offchain/arb_fabric` and are tracked in the main backlog.

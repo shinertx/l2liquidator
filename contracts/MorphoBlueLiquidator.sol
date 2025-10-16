@@ -2,23 +2,31 @@
 pragma solidity ^0.8.24;
 
 import {IERC20} from "./interfaces/IERC20.sol";
-import {IAaveV3Pool} from "./interfaces/IAaveV3Pool.sol";
-import {IFlashLoanSimpleReceiver} from "./interfaces/IFlashLoanSimpleReceiver.sol";
 import {ISwapRouterV3} from "./interfaces/ISwapRouterV3.sol";
 import {IUniswapV2Router02} from "./interfaces/IUniswapV2Router.sol";
 import {ISolidlyRouterV2} from "./interfaces/ISolidlyRouterV2.sol";
 import {DexRouter} from "./libs/DexRouter.sol";
-import {IPoolAddressesProvider} from "./interfaces/IPoolAddressesProvider.sol";
 import {IMorpho, MarketParams} from "./interfaces/IMorpho.sol";
+
+/// @title IMorphoFlashLoanCallback
+/// @notice Interface for the Morpho Blue flash loan callback.
+interface IMorphoFlashLoanCallback {
+    function onMorphoFlashLoan(
+        address caller,
+        address token,
+        uint256 assets,
+        uint256 fee,
+        bytes calldata data
+    ) external returns (bytes32);
+}
 
 /// @title Morpho Blue Liquidator
 /// @notice Flash-loan liquidator targeting Morpho Blue positions with on-chain profit & slippage guards
-contract MorphoBlueLiquidator is IFlashLoanSimpleReceiver {
+contract MorphoBlueLiquidator is IMorphoFlashLoanCallback {
     address public owner;
     address public pendingOwner;
     bool public paused;
 
-    IPoolAddressesProvider public immutable PROVIDER;
     ISwapRouterV3 public immutable ROUTER;
     IMorpho public immutable MORPHO;
     address public beneficiary;
@@ -30,7 +38,6 @@ contract MorphoBlueLiquidator is IFlashLoanSimpleReceiver {
         MarketParams market;
         address borrower;
         uint256 repayAmount;
-        uint256 repayShares;
         uint8 dexId;
         address router;
         uint24 uniFee;
@@ -40,7 +47,6 @@ contract MorphoBlueLiquidator is IFlashLoanSimpleReceiver {
         uint256 amountOutMin;
         uint256 deadline;
         bytes path;
-        bytes callbackData;
     }
 
     modifier onlyOwner() {
@@ -53,7 +59,7 @@ contract MorphoBlueLiquidator is IFlashLoanSimpleReceiver {
         _;
     }
 
-    event Fired(address indexed borrower, address debtAsset, address collateralAsset, uint256 repayAmount, uint256 repayShares);
+    event Fired(address indexed borrower, address debtAsset, address collateralAsset, uint256 repayAmount);
     event Profit(address indexed asset, uint256 netProfit);
     event Paused(bool status);
     event BeneficiaryChanged(address who);
@@ -62,10 +68,9 @@ contract MorphoBlueLiquidator is IFlashLoanSimpleReceiver {
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event ExecutorUpdated(address indexed executor, bool allowed);
 
-    constructor(address aaveProvider, address uniRouter, address morpho, address _beneficiary) {
+    constructor(address uniRouter, address morpho, address _beneficiary) {
         require(morpho != address(0), "morpho=0");
         owner = msg.sender;
-        PROVIDER = IPoolAddressesProvider(aaveProvider);
         ROUTER = ISwapRouterV3(uniRouter);
         MORPHO = IMorpho(morpho);
         beneficiary = _beneficiary;
@@ -108,95 +113,56 @@ contract MorphoBlueLiquidator is IFlashLoanSimpleReceiver {
         emit ExecutorUpdated(exec, allowed);
     }
 
-    function liquidateWithFlash(Plan calldata p) external onlyOwnerOrExecutor {
+        function liquidateWithFlash(Plan calldata p) external onlyOwnerOrExecutor {
         require(!paused, "paused");
-        require(p.repayAmount > 0 && p.repayShares > 0 && p.minProfit > 0, "bad plan");
+        require(p.repayAmount > 0 && p.minProfit > 0, "bad plan");
         require(allowedRouters[p.router], "router !allowed");
         require(p.market.loanToken != address(0) && p.market.collateralToken != address(0), "market assets");
-        emit Fired(p.borrower, p.market.loanToken, p.market.collateralToken, p.repayAmount, p.repayShares);
-        _pool().flashLoanSimple(address(this), p.market.loanToken, p.repayAmount, abi.encode(p), 0);
+        
+        emit Fired(p.borrower, p.market.loanToken, p.market.collateralToken, p.repayAmount);
+        
+        bytes memory data = abi.encode(p);
+        MORPHO.flashLoan(p.market.loanToken, p.repayAmount, data);
     }
 
-    function liquidateWithFunds(Plan calldata p) external onlyOwner {
-        require(!paused, "paused");
-        require(p.repayAmount > 0 && p.repayShares > 0 && p.minProfit > 0, "bad plan");
-        require(allowedRouters[p.router], "router !allowed");
-        IERC20 debt = IERC20(p.market.loanToken);
-        require(debt.balanceOf(address(this)) >= p.repayAmount, "funds low");
-        _approveMax(p.market.loanToken, address(MORPHO), p.repayAmount);
-        (uint256 seizedAssets, uint256 repaidAssets) = MORPHO.liquidate(
+    function onMorphoFlashLoan(
+        address caller,
+        address token,
+        uint256 assets,
+        uint256 fee,
+        bytes calldata data
+    ) external override returns (bytes32) {
+        require(caller == address(MORPHO), "!morpho");
+        require(fee == 0, "fee>0");
+
+        Plan memory p = abi.decode(data, (Plan));
+        require(token == p.market.loanToken, "token mismatch");
+        require(assets == p.repayAmount, "amount mismatch");
+
+        (uint256 seizedAssets, ) = MORPHO.liquidate(
             p.market,
             p.borrower,
-            0,
-            p.repayShares,
-            p.callbackData
+            assets,
+            type(uint256).max, // repay all shares
+            "" // no callback on liquidate
         );
-        require(seizedAssets > 0 && repaidAssets > 0, "morpho zero");
-        uint256 profit = _finalizeFunds(p, repaidAssets);
+        require(seizedAssets > 0, "morpho zero");
+
+        uint256 profit = _finalize(p, assets);
         emit Profit(p.market.loanToken, profit);
+
+        return keccak256("MORPHO_FLASH_LOAN_CALLBACK");
     }
 
-    function executeOperation(
-        address asset,
-        uint256 amount,
-        uint256 premium,
-        address,
-        bytes calldata params
-    ) external override returns (bool) {
-        IAaveV3Pool pool = _pool();
-        require(msg.sender == address(pool), "only pool");
-        Plan memory p = abi.decode(params, (Plan));
-        require(asset == p.market.loanToken, "asset mismatch");
-        require(amount == p.repayAmount, "amount mismatch");
-
-        _approveMax(p.market.loanToken, address(MORPHO), amount);
-        (uint256 seizedAssets, uint256 repaidAssets) = MORPHO.liquidate(
-            p.market,
-            p.borrower,
-            0,
-            p.repayShares,
-            p.callbackData
-        );
-        require(seizedAssets > 0 && repaidAssets > 0, "morpho zero");
-        require(repaidAssets <= amount, "repay gt flash");
-
-        uint256 profit = _finalizeFlash(p, pool, amount, premium, repaidAssets);
-        emit Profit(p.market.loanToken, profit);
-        return true;
-    }
-
-    function _finalizeFlash(
-        Plan memory p,
-        IAaveV3Pool pool,
-        uint256 amount,
-        uint256 premium,
-        uint256 /*repaidAssets*/
-    ) internal returns (uint256) {
+    function _finalize(Plan memory p, uint256 borrowed) internal returns (uint256) {
         address debtAsset = p.market.loanToken;
-    _swapCollateralForDebt(p);
-    uint256 debtAfter = IERC20(debtAsset).balanceOf(address(this));
-        uint256 totalDebt = debtAfter;
-        uint256 owe = amount + premium;
-        require(totalDebt >= owe, "insufficient out");
+        _swapCollateralForDebt(p);
+        uint256 debtAfter = IERC20(debtAsset).balanceOf(address(this));
+        require(debtAfter >= borrowed, "insufficient out");
 
-        _approveMax(debtAsset, address(pool), owe);
+        _approveMax(debtAsset, address(MORPHO), borrowed);
 
-        uint256 profit = totalDebt - owe;
-        require(profit >= p.minProfit, "minProfit not met");
-
-        if (profit > 0) {
-            bool ok = IERC20(debtAsset).transfer(beneficiary, profit);
-            require(ok, "profit transfer failed");
-        }
-        return profit;
-    }
-
-    function _finalizeFunds(Plan memory p, uint256 spent) internal returns (uint256) {
-        address debtAsset = p.market.loanToken;
-        uint256 swapOut = _swapCollateralForDebt(p);
-        require(swapOut >= spent, "insufficient out");
-
-        uint256 profit = swapOut - spent;
+        uint256 profit = debtAfter - borrowed;
         require(profit >= p.minProfit, "minProfit not met");
 
         if (profit > 0) {
@@ -259,7 +225,7 @@ contract MorphoBlueLiquidator is IFlashLoanSimpleReceiver {
         }
     }
 
-    function _pool() internal view returns (IAaveV3Pool) {
-        return IAaveV3Pool(PROVIDER.getPool());
+    function withdraw(address token, uint amount) external onlyOwner {
+        IERC20(token).transfer(beneficiary, amount);
     }
 }

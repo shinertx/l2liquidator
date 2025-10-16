@@ -2,7 +2,7 @@ import type { ProtocolKey } from '../infra/config';
 import type { ProtocolAdapter } from './types';
 import { aavev3Adapter } from './aavev3';
 import { compoundv3Adapter } from './compoundv3';
-import { morphoBlueAdapter } from './morphoblue';
+import { morphoblueAdapter } from './morphoblue';
 import { radiantAdapter } from './radiant';
 import { siloAdapter } from './silo';
 import { ionicAdapter } from './ionic';
@@ -11,7 +11,7 @@ import { exactlyAdapter } from './exactly';
 const adapters: Partial<Record<ProtocolKey, ProtocolAdapter>> = {
   aavev3: aavev3Adapter,
   compoundv3: compoundv3Adapter,
-  morphoblue: morphoBlueAdapter,
+  morphoblue: morphoblueAdapter,
   radiant: radiantAdapter,
   silo: siloAdapter,
   ionic: ionicAdapter,

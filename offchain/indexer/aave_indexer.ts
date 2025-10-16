@@ -3,6 +3,9 @@ import { log } from '../infra/logger';
 import { AppConfig, ChainCfg, ProtocolKey } from '../infra/config';
 import { emitAlert } from '../infra/alerts';
 import { counter } from '../infra/metrics';
+import { lookupToken } from '../util/symbols';
+import { getPublicClient } from '../infra/rpc_clients';
+import { oraclePriceUsd } from './price_watcher';
 
 export type Candidate = {
   borrower: `0x${string}`;
@@ -435,6 +438,92 @@ export type UserReserveBucket = {
   chainLabel: string;
 };
 
+type PriceFallbackContext = {
+  chain?: ChainCfg;
+  cache: Map<string, bigint>;
+  client?: ReturnType<typeof getPublicClient>;
+  nativePriceLoaded: boolean;
+  nativePriceUsd?: number | null;
+};
+
+type PriceFallbackResult = {
+  priceInEth: bigint;
+  source: 'oracle';
+};
+
+async function resolveFallbackPriceInEth(
+  ctx: PriceFallbackContext,
+  reserve: SubgraphUserReserve,
+): Promise<PriceFallbackResult | null> {
+  const chain = ctx.chain;
+  if (!chain) return null;
+  const tokens = chain.tokens;
+  if (!tokens) return null;
+
+  const symbol = reserve.reserve.symbol ?? 'UNKNOWN';
+  const address = normalizeAddress(reserve.reserve.underlyingAsset ?? reserve.reserve.id);
+  const cacheKey = (address ?? symbol ?? '').toLowerCase();
+  if (!cacheKey) return null;
+
+  if (ctx.cache.has(cacheKey)) {
+    const cached = ctx.cache.get(cacheKey)!;
+    if (cached > 0n) {
+      return { priceInEth: cached, source: 'oracle' };
+    }
+    return null;
+  }
+
+  const tokenEntry = lookupToken(tokens, symbol, address ?? undefined);
+  if (!tokenEntry?.value?.chainlinkFeed) {
+    ctx.cache.set(cacheKey, 0n);
+    return null;
+  }
+
+  if (!ctx.client) {
+    ctx.client = getPublicClient(chain);
+  }
+
+  try {
+    const tokenPriceUsd = await oraclePriceUsd(ctx.client!, tokenEntry.value);
+    if (tokenPriceUsd == null || tokenPriceUsd <= 0) {
+      ctx.cache.set(cacheKey, 0n);
+      return null;
+    }
+
+    if (!ctx.nativePriceLoaded) {
+      ctx.nativePriceLoaded = true;
+      const nativeToken = tokens.WETH ?? tokens.ETH;
+      if (nativeToken?.chainlinkFeed) {
+        const nativePrice = await oraclePriceUsd(ctx.client!, nativeToken);
+        ctx.nativePriceUsd = nativePrice && nativePrice > 0 ? nativePrice : null;
+      } else {
+        ctx.nativePriceUsd = null;
+      }
+    }
+
+    const nativePriceUsd = ctx.nativePriceUsd;
+    if (!nativePriceUsd || nativePriceUsd <= 0) {
+      ctx.cache.set(cacheKey, 0n);
+      return null;
+    }
+
+    const scaledNumber = Math.round((tokenPriceUsd * Number(PRICE_SCALE)) / nativePriceUsd);
+    if (!Number.isFinite(scaledNumber) || scaledNumber <= 0) {
+      ctx.cache.set(cacheKey, 0n);
+      return null;
+    }
+
+    const scaled = BigInt(scaledNumber);
+    ctx.cache.set(cacheKey, scaled);
+    return { priceInEth: scaled, source: 'oracle' };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.debug({ chainId: chain.id, symbol, address, err: message }, 'subgraph-price-fallback-failed');
+    ctx.cache.set(cacheKey, 0n);
+    return null;
+  }
+}
+
 export function normalizeAddress(addr: string | undefined): `0x${string}` | null {
   if (!addr) return null;
   if (addr.startsWith('0x') && addr.length === 42) {
@@ -448,9 +537,15 @@ export function normalizeAddress(addr: string | undefined): `0x${string}` | null
   return null;
 }
 
-export function groupUserReserves(reserves: SubgraphUserReserve[], chain?: ChainCfg): Map<string, UserReserveBucket> {
+export async function groupUserReserves(reserves: SubgraphUserReserve[], chain?: ChainCfg): Promise<Map<string, UserReserveBucket>> {
   const grouped = new Map<string, UserReserveBucket>();
   const chainLabel = chain?.name ?? String(chain?.id ?? 'unknown');
+  const fallbackCtx: PriceFallbackContext = {
+    chain,
+    cache: new Map<string, bigint>(),
+    nativePriceLoaded: false,
+  };
+
   for (const reserve of reserves) {
     const userId = reserve.user?.id;
     if (!userId?.startsWith('0x')) continue;
@@ -477,7 +572,19 @@ export function groupUserReserves(reserves: SubgraphUserReserve[], chain?: Chain
 
     const debtBalance = parseBigIntOrZero(reserve.currentTotalDebt);
     const collateralBalance = parseBigIntOrZero(reserve.currentATokenBalance);
-    const priceInEth = parseBigIntOrZero(priceRaw);
+    let priceInEth = parseBigIntOrZero(priceRaw);
+    let fallbackSource: PriceFallbackResult['source'] | null = null;
+
+    if (priceInEth === 0n) {
+      const fallback = await resolveFallbackPriceInEth(fallbackCtx, reserve);
+      if (fallback && fallback.priceInEth > 0n) {
+        priceInEth = fallback.priceInEth;
+        fallbackSource = fallback.source;
+        const symbol = reserve.reserve.symbol ?? 'UNKNOWN';
+        log.debug({ chainId: chain?.id, user: userId, symbol, source: fallbackSource }, 'subgraph-price-fallback');
+      }
+    }
+
     if (priceInEth === 0n) {
       const symbol = reserve.reserve.symbol ?? 'UNKNOWN';
       if (debtBalance > 0n && !bucket.missingDebtPrices.has(symbol)) {
@@ -494,21 +601,28 @@ export function groupUserReserves(reserves: SubgraphUserReserve[], chain?: Chain
     }
 
     if (debtBalance > 0n) {
-        const debtValue = (debtBalance * priceInEth * HF_SCALE) / (unit * PRICE_SCALE);
-        bucket.totalDebtEth += debtValue;
+      const debtValue = (debtBalance * priceInEth * HF_SCALE) / (unit * PRICE_SCALE);
+      bucket.totalDebtEth += debtValue;
+      if (fallbackSource) {
+        const symbol = reserve.reserve.symbol ?? 'UNKNOWN';
+        counter.subgraphPriceFallback.inc({ chain: chainLabel, token: symbol, role: 'debt', source: fallbackSource });
+      }
     }
 
-    if (reserve.usageAsCollateralEnabledOnUser) {
-      if (collateralBalance > 0n) {
-        const collateralValue = (collateralBalance * priceInEth * HF_SCALE) / (unit * PRICE_SCALE);
-        if (collateralValue > 0n) {
-          const threshold = parseBigIntOrZero(reserve.reserve.reserveLiquidationThreshold);
-          const adjusted = (collateralValue * threshold) / LIQ_THRESHOLD_SCALE;
-          bucket.totalAdjustedCollateralEth += adjusted;
+    if (reserve.usageAsCollateralEnabledOnUser && collateralBalance > 0n) {
+      const collateralValue = (collateralBalance * priceInEth * HF_SCALE) / (unit * PRICE_SCALE);
+      if (collateralValue > 0n) {
+        const threshold = parseBigIntOrZero(reserve.reserve.reserveLiquidationThreshold);
+        const adjusted = (collateralValue * threshold) / LIQ_THRESHOLD_SCALE;
+        bucket.totalAdjustedCollateralEth += adjusted;
+        if (fallbackSource) {
+          const symbol = reserve.reserve.symbol ?? 'UNKNOWN';
+          counter.subgraphPriceFallback.inc({ chain: chainLabel, token: symbol, role: 'collateral', source: fallbackSource });
         }
       }
     }
   }
+
   return grouped;
 }
 
@@ -519,21 +633,28 @@ export function buildCandidatesFromBucket(
   hfThreshold: number,
   protocol: ProtocolKey = 'aavev3'
 ): Candidate[] {
-  if (bucket.missingDebtPrices.size > 0 || bucket.missingCollateralPrices.size > 0) {
+  const derivedHealthFactor = bucket.totalDebtEth === 0n
+    ? Number.POSITIVE_INFINITY
+    : Number(bucket.totalAdjustedCollateralEth) / Number(bucket.totalDebtEth);
+  const missingDebtPrices = bucket.missingDebtPrices.size > 0;
+  const missingCollateralPrices = bucket.missingCollateralPrices.size > 0;
+  let healthFactor =
+    bucket.subgraphHealthFactor != null ? bucket.subgraphHealthFactor : derivedHealthFactor;
+  if (!Number.isFinite(healthFactor) || healthFactor <= 0) {
+    healthFactor = derivedHealthFactor;
+  }
+  if ((!Number.isFinite(healthFactor) || healthFactor <= 0) && (missingDebtPrices || missingCollateralPrices)) {
+    const fallbackHf = Math.max(0.0001, Math.min(hfThreshold - 0.0001, 0.95));
     const chainLabel = bucket.chainLabel ?? String(chainId);
     log.debug({
       chainId,
       borrower: userId,
+      fallbackHf,
       missingDebtPrices: [...bucket.missingDebtPrices],
       missingCollateralPrices: [...bucket.missingCollateralPrices],
-    }, 'skip-bucket-missing-prices');
-    counter.candidateDrops.inc({ chain: chainLabel, reason: 'missing-price' });
-    return [];
+    }, 'missing-price-fallback-hf');
+    healthFactor = fallbackHf;
   }
-  const derivedHealthFactor = bucket.totalDebtEth === 0n
-    ? Number.POSITIVE_INFINITY
-    : Number(bucket.totalAdjustedCollateralEth) / Number(bucket.totalDebtEth);
-  const healthFactor = bucket.subgraphHealthFactor ?? derivedHealthFactor;
   if (!Number.isFinite(healthFactor) || healthFactor <= 0 || healthFactor >= hfThreshold) return [];
 
   const debts: Candidate['debt'][] = [];
@@ -666,7 +787,7 @@ export async function* streamCandidates(
         const dt = Date.now() - t0;
         log.debug({ chainId: chain.id, users: maxUsers, userReserves: reserves.length, ms: dt, subgraph }, 'subgraph-poll-users');
 
-        const grouped = groupUserReserves(reserves, chain);
+  const grouped = await groupUserReserves(reserves, chain);
         if (backoffs.has(chain.id)) {
           backoffs.delete(chain.id);
         }
@@ -749,7 +870,7 @@ export async function fetchBorrowerCandidates(
     const reserves = response?.userReserves ?? [];
     markSubgraphSuccess(chain.id);
     if (reserves.length === 0) return [];
-    const grouped = groupUserReserves(reserves, chain);
+  const grouped = await groupUserReserves(reserves, chain);
     const bucket = grouped.get(userId);
     if (!bucket) return [];
     return buildCandidatesFromBucket(userId, chain.id, bucket, hfThreshold, opts.protocol);
@@ -780,8 +901,8 @@ export async function pollChainCandidatesOnce(
   const limit = subgraphFirst || first;
 
   try {
-    const reserves = await fetchCandidateReserves(chain.id, subgraph, Math.max(1, limit));
-    const grouped = groupUserReserves(reserves, chain);
+  const reserves = await fetchCandidateReserves(chain.id, subgraph, Math.max(1, limit));
+  const grouped = await groupUserReserves(reserves, chain);
     for (const [userId, bucket] of grouped.entries()) {
       const candidates = buildCandidatesFromBucket(
         userId,

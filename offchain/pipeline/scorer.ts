@@ -111,9 +111,7 @@ export class Scorer {
       if (routeOptions.length > 0) {
         try {
           const ratio = await dexPriceRatio({ client, chain, collateral: collateralToken, debt: debtToken, fee: gapFee, router: gapRouter });
-          const ELIGIBLE = new Set(['USDC', 'USDT', 'WETH', 'wstETH', 'WBTC', 'cbETH', 'rETH', 'sUSD', 'LUSD']);
-          const eligible = ELIGIBLE.has(debtTokenEntry.key) || ELIGIBLE.has(collateralTokenEntry.key);
-          if (eligible && ratio && Number.isFinite(ratio) && ratio > 0) {
+          if (ratio && Number.isFinite(ratio) && ratio > 0) {
             if (collPriceUsd == null && debtPriceUsd != null && debtPriceUsd > 0) {
               collPriceUsd = debtPriceUsd * ratio;
               this.scorerLog.debug({ borrower: candidate.borrower, debt: candidate.debt.symbol, collateral: candidate.collateral.symbol, ratio, inferred: collPriceUsd }, 'price-fallback-dex-collateral');

@@ -1,6 +1,11 @@
-import type { Chain, PublicClient, Transport } from 'viem';
 import { Buffer } from 'buffer';
-import { Address, getAddress } from 'viem';
+import type { Chain, PublicClient, Transport } from 'viem';
+import {
+  AbiFunctionNotFoundError,
+  Address,
+  ContractFunctionExecutionError,
+  getAddress,
+} from 'viem';
 import { ChainCfg, TokenInfo } from '../infra/config';
 import LiquidatorAbi from '../executor/Liquidator.abi.json';
 
@@ -162,7 +167,7 @@ async function quoteUniV3(
   let lastError: unknown;
   for (const sqrtPriceLimitX96 of attempts) {
     try {
-      const { result } = await client.simulateContract({
+      const [amountOut] = (await client.readContract({
         address: getAddress(chain.quoter as Address),
         abi: QUOTER_ABI,
         functionName: 'quoteExactInputSingle',
@@ -175,8 +180,7 @@ async function quoteUniV3(
             sqrtPriceLimitX96,
           },
         ],
-      });
-      const [amountOut] = result as unknown as [bigint, bigint, number, bigint];
+      })) as [bigint, bigint, number, bigint];
       return amountOut;
     } catch (err) {
       lastError = err;
@@ -193,7 +197,7 @@ async function quoteUniV3Multi(
   seizeAmount: bigint
 ): Promise<{ quoted: bigint; path: `0x${string}` }> {
   const encodedPath = encodeUniV3Path(option.path, option.fees);
-  const { result } = await client.simulateContract({
+  const [amountOut] = (await client.readContract({
     address: getAddress(chain.quoter as Address),
     abi: QUOTER_ABI,
     functionName: 'quoteExactInput',
@@ -203,8 +207,7 @@ async function quoteUniV3Multi(
         amountIn: seizeAmount,
       },
     ],
-  });
-  const [amountOut] = result as unknown as [bigint, bigint[], number[], bigint];
+  })) as [bigint, bigint[], number[], bigint];
   return { quoted: amountOut, path: encodedPath };
 }
 
@@ -270,12 +273,26 @@ async function buildRouteQuote({
 }): Promise<RouteQuote | null> {
   try {
     // Skip routes not allowed in Liquidator
-    const allowed = (await client.readContract({
-      address: getAddress(contract),
-      abi: LiquidatorAbi as any,
-      functionName: 'allowedRouters',
-      args: [getAddress(option.router)],
-    })) as boolean;
+    let allowed: boolean;
+    try {
+      allowed = (await client.readContract({
+        address: getAddress(contract),
+        abi: LiquidatorAbi as any,
+        functionName: 'allowedRouters',
+        args: [getAddress(option.router)],
+      })) as boolean;
+    } catch (err) {
+      if (
+        err instanceof AbiFunctionNotFoundError ||
+        (err instanceof ContractFunctionExecutionError &&
+          err.cause instanceof AbiFunctionNotFoundError)
+      ) {
+        // Older contract versions do not expose allowlist management.
+        allowed = true;
+      } else {
+        throw err;
+      }
+    }
     if (!allowed) return null;
 
     let quoted: bigint;

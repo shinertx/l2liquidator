@@ -252,6 +252,7 @@ type TokenInfo = {
   address: string;
   decimals: number;
   chainlinkFeed?: string;
+  feedDenomination?: 'usd' | 'eth';
 };
 
 const MANUAL_TOKENS: Record<number, Record<string, TokenInfo>> = {
@@ -268,6 +269,8 @@ const MANUAL_TOKENS: Record<number, Record<string, TokenInfo>> = {
     rsETH: {
       address: '0x4186bfc76e2e237523cbc30fd220fe055156b41f',
       decimals: 18,
+      chainlinkFeed: '0xb0EA543f9F8d4B818550365d13F66Da747e1476A',
+      feedDenomination: 'eth',
     },
   },
   8453: {

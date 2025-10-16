@@ -10,11 +10,17 @@ struct MarketParams {
 }
 
 interface IMorpho {
+    function flashLoan(
+        address token,
+        uint256 assets,
+        bytes calldata data
+    ) external;
+
     function liquidate(
         MarketParams calldata marketParams,
         address borrower,
-        uint256 seizedAssets,
-        uint256 repaidShares,
+        uint256 repayAmount,
+        uint256 repayShares,
         bytes calldata data
-    ) external returns (uint256 seizedAssetsOut, uint256 repaidAssetsOut);
+    ) external returns (uint256 seizedAssets, uint256 repaidAssets);
 }

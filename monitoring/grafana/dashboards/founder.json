@@ -23,7 +23,12 @@
   "panels": [
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "id": 1,
       "panels": [],
       "title": "Hero Metrics",
@@ -34,13 +39,20 @@
       "description": "Sum of estimated profits in the selected window.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red" },
-              { "color": "green", "value": 0 }
+              {
+                "color": "red"
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
             ]
           },
           "unit": "currencyUSD",
@@ -48,7 +60,12 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 4, "x": 0, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
       "id": 2,
       "options": {
         "colorMode": "value",
@@ -56,7 +73,9 @@
         "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["last"],
+          "calcs": [
+            "last"
+          ],
           "fields": "",
           "values": false
         },
@@ -82,14 +101,25 @@
       "description": "Plans sent vs ready over the window.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": 0 },
-              { "color": "orange", "value": 0.7 },
-              { "color": "green", "value": 0.9 }
+              {
+                "color": "red",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 0.7
+              },
+              {
+                "color": "green",
+                "value": 0.9
+              }
             ]
           },
           "unit": "percentunit",
@@ -97,7 +127,12 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 4, "x": 4, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
       "id": 3,
       "options": {
         "colorMode": "value",
@@ -105,7 +140,9 @@
         "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["last"],
+          "calcs": [
+            "last"
+          ],
           "fields": "",
           "values": false
         },
@@ -131,12 +168,16 @@
       "description": "Plans the simulator marked ready within the selected window.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue" }
+              {
+                "color": "blue"
+              }
             ]
           },
           "unit": "short",
@@ -144,7 +185,12 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 4, "x": 8, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
       "id": 21,
       "options": {
         "colorMode": "value",
@@ -152,7 +198,9 @@
         "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["last"],
+          "calcs": [
+            "last"
+          ],
           "fields": "",
           "values": false
         },
@@ -177,12 +225,16 @@
       "description": "How many liquidations were actually broadcast.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "dark-blue" }
+              {
+                "color": "dark-blue"
+              }
             ]
           },
           "unit": "short",
@@ -190,7 +242,12 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 4, "x": 12, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
       "id": 4,
       "options": {
         "colorMode": "value",
@@ -198,7 +255,9 @@
         "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["last"],
+          "calcs": [
+            "last"
+          ],
           "fields": "",
           "values": false
         },
@@ -223,14 +282,25 @@
       "description": "Errors vs total attempts in the window.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": 0 },
-              { "color": "orange", "value": 0.05 },
-              { "color": "red", "value": 0.1 }
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 0.05
+              },
+              {
+                "color": "red",
+                "value": 0.1
+              }
             ]
           },
           "unit": "percentunit",
@@ -238,7 +308,12 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 4, "x": 16, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
       "id": 5,
       "options": {
         "colorMode": "value",
@@ -246,7 +321,9 @@
         "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["last"],
+          "calcs": [
+            "last"
+          ],
           "fields": "",
           "values": false
         },
@@ -271,13 +348,21 @@
       "description": "Average pnl/gas observed over the window.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": 0 },
-              { "color": "green", "value": 2 }
+              {
+                "color": "red",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 2
+              }
             ]
           },
           "unit": "none",
@@ -285,7 +370,12 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 4, "x": 20, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
       "id": 6,
       "options": {
         "colorMode": "value",
@@ -293,7 +383,9 @@
         "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["last"],
+          "calcs": [
+            "last"
+          ],
           "fields": "",
           "values": false
         },
@@ -315,7 +407,12 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
       "id": 7,
       "panels": [],
       "title": "Trendlines",
@@ -326,12 +423,16 @@
       "description": "Hourly profit pace per chain.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green" }
+              {
+                "color": "green"
+              }
             ]
           },
           "unit": "currencyUSD",
@@ -339,11 +440,23 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 10 },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
       "id": 8,
       "options": {
-        "legend": { "displayMode": "table", "placement": "right", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
@@ -361,22 +474,43 @@
       "description": "Compare plan lifecycle stages.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [ { "color": "green" } ]
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 10 },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
       "id": 9,
       "options": {
-        "legend": { "displayMode": "table", "placement": "right", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "none" },
-        "stacking": { "group": "A", "mode": "normal" }
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "stacking": {
+          "group": "A",
+          "mode": "normal"
+        }
       },
       "targets": [
         {
@@ -403,18 +537,39 @@
       "description": "Sequencer fallback triggers per chain.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [ { "color": "red" } ] },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red"
+              }
+            ]
+          },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 19 },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 19
+      },
       "id": 10,
       "options": {
-        "legend": { "displayMode": "table", "placement": "right", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
@@ -431,18 +586,39 @@
       "description": "RPC error spikes segmented by provider/target.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [ { "color": "orange" } ] },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange"
+              }
+            ]
+          },
           "unit": "wps"
         },
         "overrides": []
       },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 19 },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 19
+      },
       "id": 11,
       "options": {
-        "legend": { "displayMode": "table", "placement": "right", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
@@ -456,7 +632,12 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 28 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
       "id": 12,
       "panels": [],
       "title": "Skips & Taxonomy",
@@ -467,19 +648,39 @@
       "description": "Gap skip breakdown (last 24h).",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [ { "color": "green" } ] }
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
         },
         "overrides": []
       },
-      "gridPos": { "h": 9, "w": 8, "x": 0, "y": 29 },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 29
+      },
       "id": 13,
       "options": {
-        "legend": { "displayMode": "hidden", "placement": "right", "showLegend": false },
+        "legend": {
+          "displayMode": "hidden",
+          "placement": "right",
+          "showLegend": false
+        },
         "orientation": "horizontal",
         "showValue": "always",
-        "valueOptions": { "decimals": 0 }
+        "valueOptions": {
+          "decimals": 0
+        }
       },
       "targets": [
         {
@@ -496,16 +697,37 @@
       "description": "Gap & policy skips by asset over 24h.",
       "fieldConfig": {
         "defaults": {
-          "custom": { "align": "auto", "displayMode": "auto" },
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          },
           "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [ { "color": "green" } ] }
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
         },
         "overrides": []
       },
-      "gridPos": { "h": 9, "w": 16, "x": 8, "y": 29 },
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 8,
+        "y": 29
+      },
       "id": 14,
       "options": {
-        "footer": { "countRows": false, "fields": "", "reducer": ["sum"] },
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ]
+        },
         "showHeader": true
       },
       "targets": [
@@ -521,7 +743,12 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 38 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 38
+      },
       "id": 15,
       "panels": [],
       "title": "Drill-down",
@@ -532,13 +759,26 @@
       "description": "Latest attempts with explorer hash when available.",
       "fieldConfig": {
         "defaults": {
-          "custom": { "align": "auto", "displayMode": "auto" },
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          },
           "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [ { "color": "green" } ] }
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "tx_hash" },
+            "matcher": {
+              "id": "byName",
+              "options": "tx_hash"
+            },
             "properties": [
               {
                 "id": "links",
@@ -553,10 +793,19 @@
           }
         ]
       },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 39 },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 39
+      },
       "id": 16,
       "options": {
-        "footer": { "countRows": false, "fields": "", "reducer": [] },
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": []
+        },
         "showHeader": true
       },
       "targets": [
@@ -575,14 +824,26 @@
       "description": "Highest volume borrowers over the last 6h.",
       "fieldConfig": {
         "defaults": {
-          "custom": { "align": "auto", "displayMode": "auto" }
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
         },
         "overrides": []
       },
-      "gridPos": { "h": 9, "w": 6, "x": 12, "y": 39 },
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 12,
+        "y": 39
+      },
       "id": 17,
       "options": {
-        "footer": { "countRows": false, "fields": "", "reducer": [] },
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": []
+        },
         "showHeader": true
       },
       "targets": [
@@ -601,14 +862,26 @@
       "description": "Dry-run vs live counts to monitor transitions.",
       "fieldConfig": {
         "defaults": {
-          "custom": { "align": "auto", "displayMode": "auto" }
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
         },
         "overrides": []
       },
-      "gridPos": { "h": 9, "w": 6, "x": 18, "y": 39 },
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 18,
+        "y": 39
+      },
       "id": 18,
       "options": {
-        "footer": { "countRows": false, "fields": "", "reducer": [] },
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": []
+        },
         "showHeader": true
       },
       "targets": [
@@ -624,7 +897,12 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 48 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      },
       "id": 19,
       "panels": [],
       "title": "Logs",
@@ -633,7 +911,12 @@
     {
       "datasource": "Loki",
       "description": "Recent warnings & errors from orchestrator / dry-run logs.",
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 49 },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 49
+      },
       "id": 20,
       "options": {
         "dedupStrategy": "none",
@@ -652,16 +935,164 @@
       ],
       "title": "Warn/Error Logs",
       "type": "logs"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 58
+      },
+      "id": 22,
+      "panels": [],
+      "title": "Coverage",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 59
+      },
+      "id": 23,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "editorMode": "code",
+          "expr": "protocol_markets_enabled",
+          "legendFormat": "{{protocol}} \u2022 {{chain}}"
+        }
+      ],
+      "title": "Protocol Markets Enabled",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "auto"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 59
+      },
+      "id": 24,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "editorMode": "code",
+          "expr": "fabric_pairs_ready",
+          "legendFormat": "ready \u2022 {{chain}}"
+        },
+        {
+          "datasource": "Prometheus",
+          "editorMode": "code",
+          "expr": "fabric_pairs_configured",
+          "legendFormat": "configured \u2022 {{chain}}"
+        },
+        {
+          "datasource": "Prometheus",
+          "editorMode": "code",
+          "expr": "fabric_pairs_configured - fabric_pairs_ready",
+          "legendFormat": "missing \u2022 {{chain}}"
+        }
+      ],
+      "title": "Fabric Venue Coverage",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
   "style": "dark",
-  "tags": ["founder", "ops"],
+  "tags": [
+    "founder",
+    "ops"
+  ],
   "templating": {
     "list": [
       {
-        "current": { "selected": false, "text": ["All"], "value": ["$__all"] },
+        "current": {
+          "selected": false,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
         "datasource": "Prometheus",
         "definition": "label_values(plans_ready_total, chain)",
         "hide": 0,
@@ -677,7 +1108,11 @@
         "type": "query"
       },
       {
-        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
         "datasource": "Prometheus",
         "definition": "label_values(profit_estimated_total_usd, mode)",
         "hide": 0,
@@ -696,16 +1131,40 @@
         "auto": false,
         "auto_count": 30,
         "auto_min": "1m",
-        "current": { "selected": true, "text": "24h", "value": "24h" },
+        "current": {
+          "selected": true,
+          "text": "24h",
+          "value": "24h"
+        },
         "hide": 0,
         "label": "Window",
         "name": "timewindow",
         "options": [
-          { "selected": false, "text": "1h", "value": "1h" },
-          { "selected": false, "text": "6h", "value": "6h" },
-          { "selected": true, "text": "24h", "value": "24h" },
-          { "selected": false, "text": "3d", "value": "72h" },
-          { "selected": false, "text": "7d", "value": "168h" }
+          {
+            "selected": false,
+            "text": "1h",
+            "value": "1h"
+          },
+          {
+            "selected": false,
+            "text": "6h",
+            "value": "6h"
+          },
+          {
+            "selected": true,
+            "text": "24h",
+            "value": "24h"
+          },
+          {
+            "selected": false,
+            "text": "3d",
+            "value": "72h"
+          },
+          {
+            "selected": false,
+            "text": "7d",
+            "value": "168h"
+          }
         ],
         "query": "1h,6h,24h,72h,168h",
         "refresh": 2,
@@ -713,7 +1172,10 @@
       }
     ]
   },
-  "time": { "from": "now-24h", "to": "now" },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "",
   "title": "Founder Ops",

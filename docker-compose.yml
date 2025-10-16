@@ -92,12 +92,8 @@ services:
 
   alertmanager:
     image: prom/alertmanager:v0.27.0
-    command:
-      - '--config.file=/etc/alertmanager/alertmanager.yml'
     volumes:
       - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-    environment:
-      SLACK_ALERT_WEBHOOK: ${SLACK_ALERT_WEBHOOK}
     ports:
       - "9093:9093"
     restart: unless-stopped

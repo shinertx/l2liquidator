@@ -52,7 +52,14 @@ check_docker_container() {
         return 1
     fi
     
-    local health=$(docker inspect --format='{{.State.Health.Status}}' "$name" 2>/dev/null || echo "none")
+    local health_raw
+    health_raw=$(docker inspect --format='{{.State.Health.Status}}' "$name" 2>/dev/null) || health_raw="none"
+    local health
+    health=$(echo "$health_raw" | tr -d '\r\n')
+    if [[ -z "$health" ]] || [[ "$health" == "<no value>" ]]; then
+        health="none"
+    fi
+
     if [[ "$health" == "healthy" ]] || [[ "$health" == "none" ]]; then
         log "OK: Docker container $name is running (health: $health)"
         return 0
@@ -72,7 +79,7 @@ check_database() {
 }
 
 check_redis() {
-    if ! docker exec l2liquidator-redis-1 redis-cli ping >/dev/null 2>&1; then
+    if ! docker exec l2liquidator-redis-1 redis-cli -p 6380 ping >/dev/null 2>&1; then
         log "ERROR: Redis is not responding"
         return 1
     fi
@@ -103,7 +110,7 @@ restart_orchestrator() {
         cd "$PROJECT_ROOT"
         pkill -f "orchestrator.ts" || true
         sleep 5
-        npm run dev > "logs/orchestrator_auto_$(date -u +%Y%m%dT%H%M%SZ).log" 2>&1 &
+    PROM_PORT=9664 npm run dev > "logs/orchestrator_auto_$(date -u +%Y%m%dT%H%M%SZ).log" 2>&1 &
         local new_pid=$!
         echo "$new_pid" > "$PROJECT_ROOT/orchestrator.pid"
     fi

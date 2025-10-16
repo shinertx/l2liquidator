@@ -15,15 +15,15 @@
 > | Micro-Liquidator | Yes | `npm run dev` / `./scripts/dev_env.sh` | 9464 (`PROM_PORT`) | Aave v3 liquidations |  
 > | LAF (Arb Fabric) | Optional | `npm run fabric` | `FABRIC_PROM_PORT` (default 9470) | DEX arbitrage |
 
-> **TODO (Operations)**  
-> - Add the new Morpho/Base assets (USR, USD0, Pendle PTs, etc.) to `config.yaml` with correct Chainlink feeds before re-enabling Base in `MORPHO_BLUE_CHAIN_IDS`.  
-> - Tune pre-liquidation repay sizing (target $300–$3k clips) and raise BTC repay caps in the risk config.  
-> - Revert throttling once ready: increase `MORPHO_BLUE_FIRST`, lower `MORPHO_BLUE_POLL_DELAY_MS`, and add chain 8453 back to `MORPHO_BLUE_CHAIN_IDS`.
-- **TODO (Morpho/Base rollout plan)**  
+- **Operations focus**  
+  - Run `npm run feed:check -- --write` after syncing new assets (USR, USD0, Pendle PTs, etc.) so `config.yaml` stays aligned before re-enabling Base in `MORPHO_BLUE_CHAIN_IDS`.  
+  - Tune pre-liquidation repay sizing (target $300–$3k clips) and raise BTC repay caps in the risk config.  
+  - Morpho/Base throttles ship relaxed by default (`MORPHO_BLUE_CHAIN_IDS=1,8453`, `MORPHO_BLUE_FIRST=1200`, poll windows 10–120s); tighten if you need a slower canary.
+- **Morpho/Base rollout plan**  
   - Turn on Morpho/Base monitoring for BTC/cbBTC collateral + USDC once policies/feeds are populated.  
   - Enable the pre-liquidation adapter for small ($300–$3k) clips with guards (`net ≥ $2`, `pnl_per_gas ≥ 4×`).  
   - Run a 24 h census on Morpho/Base to capture HF<1 and pre-liq trigger stats before sending gas.  
-  - Raise max repay to $10–30k on BTC books and keep RFQ/intent exits atomic.  
+  - Raise max repay to $10–30k on BTC books once you have RFQ/intent coverage; until then cap at conservative levels and prefer AMM-friendly clips.  
   - Add alerts/autodiscovery for new Coinbase-listed vaults/pairs.
 
 ### Quickstart (dev)

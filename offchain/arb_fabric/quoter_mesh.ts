@@ -34,10 +34,14 @@ const QUOTER_ABI = [
 
 export class QuoterMesh {
   private readonly poolSqrtCache = new Map<string, { value: bigint; fetchedAt: number }>();
+  private readonly splSaturationBackoff = new Map<string, { until: number; failCount: number; lastLog?: number }>();
 
   private static readonly MIN_SQRT_RATIO = 4295128739n;
   private static readonly MAX_SQRT_RATIO = 1461446703485210103287273052203988822378723970342n;
   private static readonly CACHE_TTL_MS = 30_000;
+  private static readonly SPL_SATURATION_BACKOFF_MS = 250;
+  private static readonly SPL_SATURATION_BACKOFF_MAX_MS = 5_000;
+  private static readonly SPL_SATURATION_LOG_COOLDOWN_MS = 1_000;
 
   constructor(private readonly registry: PairRegistry) {}
 
@@ -99,6 +103,29 @@ export class QuoterMesh {
     const SCALE_FACTOR = 4n;
     const sqrtPriceLimits = await this.buildSqrtPriceLimits(client, venue, tokenIn, tokenOut);
 
+    const saturationKey = this.buildSaturationKey(venue, tokenIn, tokenOut);
+    const now = Date.now();
+    const suppressed = this.splSaturationBackoff.get(saturationKey);
+    if (suppressed && suppressed.until > now) {
+      if (!suppressed.lastLog || now - suppressed.lastLog >= QuoterMesh.SPL_SATURATION_LOG_COOLDOWN_MS) {
+        log.debug(
+          {
+            venue: venue.config.id,
+            tokenIn,
+            tokenOut,
+            retryAtMs: suppressed.until,
+            failCount: suppressed.failCount,
+          },
+          'fabric-quoter-spl-suppressed',
+        );
+        this.splSaturationBackoff.set(saturationKey, { ...suppressed, lastLog: now });
+      }
+      return { amountOut: 0n, sqrtPriceX96After: 0n, gasEstimate: 0n };
+    }
+    if (suppressed && suppressed.until <= now) {
+      this.splSaturationBackoff.delete(saturationKey);
+    }
+
     let lastError: unknown;
 
     for (const sqrtPriceLimit of sqrtPriceLimits) {
@@ -138,6 +165,8 @@ export class QuoterMesh {
             );
           }
 
+          this.splSaturationBackoff.delete(saturationKey);
+
           return {
             amountOut,
             sqrtPriceX96After,
@@ -168,6 +197,7 @@ export class QuoterMesh {
     if (lastError) {
       const message = lastError instanceof Error ? lastError.message : String(lastError);
       if (isPriceLimitHardFailure(message)) {
+        const { failCount, until, backoffMs } = this.registerSaturationFailure(saturationKey);
         log.debug(
           {
             venue: venue.config.id,
@@ -175,6 +205,9 @@ export class QuoterMesh {
             tokenOut,
             amountIn: amountIn.toString(),
             message,
+            retryAtMs: until,
+            backoffMs,
+            failCount,
           },
           'fabric-quoter-spl-saturated',
         );
@@ -183,6 +216,23 @@ export class QuoterMesh {
     }
 
     throw (lastError instanceof Error ? lastError : new Error(String(lastError ?? 'quote failed')));
+  }
+
+  private registerSaturationFailure(key: string): { failCount: number; until: number; backoffMs: number } {
+    const now = Date.now();
+    const previous = this.splSaturationBackoff.get(key);
+    const failCount = (previous?.failCount ?? 0) + 1;
+    const backoffMs = Math.min(
+      QuoterMesh.SPL_SATURATION_BACKOFF_MS * Math.pow(2, failCount - 1),
+      QuoterMesh.SPL_SATURATION_BACKOFF_MAX_MS,
+    );
+    const until = now + backoffMs;
+    this.splSaturationBackoff.set(key, { until, failCount, lastLog: now });
+    return { failCount, until, backoffMs };
+  }
+
+  private buildSaturationKey(venue: VenueRuntime, tokenIn: Address, tokenOut: Address): string {
+    return `${venue.config.id}:${tokenIn.toLowerCase()}->${tokenOut.toLowerCase()}`;
   }
 
   private async buildSqrtPriceLimits(

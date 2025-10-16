@@ -1,8 +1,73 @@
 import type { Address } from 'viem';
+import { getAddress } from 'viem';
 import { AppConfig, ChainCfg } from '../infra/config';
 import { RouteOption } from '../simulator/router';
 
 const DEFAULT_UNI_FEES = [100, 500, 3000, 10000];
+
+const STABLE_SYMBOLS = new Set([
+  'USDC',
+  'USDCN',
+  'USDC.E',
+  'USDCPLUS',
+  'USDBC',
+  'USDB',
+  'USDT',
+  'DAI',
+  'LUSD',
+  'SUSD',
+  'USDE',
+  'USDS',
+  'USDL',
+  'GHO',
+  'FRAX',
+  'MAI',
+  'EURS',
+  'EURC',
+  'EUROC',
+  'CUSD',
+]);
+
+const PEGGED_PAIR_KEYS = new Set([
+  // ETH staking derivatives
+  'ETH-WSTETH',
+  'WETH-WSTETH',
+  'WSTETH-WETH',
+  'WETH-RETH',
+  'RETH-WETH',
+  'WETH-CBETH',
+  'CBETH-WETH',
+  'WETH-SFRXETH',
+  'SFRXETH-WETH',
+  // Polygon staking derivatives
+  'WPOL-MATICX',
+  'MATICX-WPOL',
+  'WMATIC-MATICX',
+  'MATICX-WMATIC',
+]);
+
+function normalizeSymbol(symbol?: string): string | null {
+  if (!symbol) return null;
+  return symbol.replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+}
+
+function isStableSymbol(symbol?: string): boolean {
+  const normalized = normalizeSymbol(symbol);
+  if (!normalized) return false;
+  if (STABLE_SYMBOLS.has(normalized)) return true;
+  return /USD|EUR|DAI|FRAX|GHO|MAI/.test(normalized);
+}
+
+function isPeggedPair(a?: string, b?: string): boolean {
+  const na = normalizeSymbol(a);
+  const nb = normalizeSymbol(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const key = `${na}-${nb}`;
+  if (PEGGED_PAIR_KEYS.has(key)) return true;
+  const reverseKey = `${nb}-${na}`;
+  return PEGGED_PAIR_KEYS.has(reverseKey);
+}
 
 type RouteBuildResult = {
   options: RouteOption[];
@@ -20,27 +85,28 @@ export function buildRouteOptions(
   const chainDex = cfg.dexRouters?.[chain.id];
   const debtToken = chain.tokens[debtSymbol];
   const collateralToken = chain.tokens[collateralSymbol];
+  const isStablePair = (isStableSymbol(debtSymbol) && isStableSymbol(collateralSymbol)) || isPeggedPair(debtSymbol, collateralSymbol);
+  const uniFeesForPair = DEFAULT_UNI_FEES.filter((fee) => fee !== 100 || isStablePair);
 
   if (!chainDex) {
     // Fallback to default UniV3 if no dexRouters are configured for the chain
     const uniRouter = chain.uniV3Router as Address | undefined;
     if (uniRouter) {
-      for (const fee of DEFAULT_UNI_FEES) {
+      for (const fee of uniFeesForPair) {
         options.push({ type: 'UniV3', router: uniRouter, fee });
       }
     }
-    return { options, gapFee: DEFAULT_UNI_FEES[1], gapRouter: uniRouter };
+    const gapFee = uniFeesForPair[0] ?? 500;
+    return { options, gapFee, gapRouter: uniRouter };
   }
 
   // Uniswap V3
   const uniV3Router = (chainDex.uniV3 ?? chain.uniV3Router) as Address | undefined;
   if (uniV3Router) {
-    for (const fee of DEFAULT_UNI_FEES) {
+    for (const fee of uniFeesForPair) {
       options.push({ type: 'UniV3', router: uniV3Router, fee });
     }
   }
-
-  const stableSymbols = new Set(['USDC', 'USDT', 'DAI', 'LUSD', 'SUSD', 'USDC.E', 'USDBC']);
   const stableToken = chain.tokens.USDC || chain.tokens.USDbC || chain.tokens['USDC.e'];
   const stableSymbol = stableToken
     ? Object.entries(chain.tokens).find(([, info]) => info.address.toLowerCase() === stableToken.address.toLowerCase())?.[0] ?? 'USDC'
@@ -51,7 +117,10 @@ export function buildRouteOptions(
     : 'WETH';
 
   const multiHopCandidates: Array<{ path: Address[]; fees: number[] }> = [];
-  const pickFee = (a: string, b: string) => (stableSymbols.has(a.toUpperCase()) && stableSymbols.has(b.toUpperCase()) ? 100 : 500);
+  const pickFee = (a: string, b: string) => {
+    if ((isStableSymbol(a) && isStableSymbol(b)) || isPeggedPair(a, b)) return 100;
+    return 500;
+  };
 
   if (uniV3Router && debtToken && collateralToken) {
     if (stableToken && stableToken.address !== debtToken.address && stableToken.address !== collateralToken.address) {
@@ -72,10 +141,30 @@ export function buildRouteOptions(
     }
   }
 
-  // Camelot (Uniswap V2 fork)
-  if (chainDex.camelotV2) {
-    options.push({ type: 'UniV2', router: chainDex.camelotV2 as Address });
-  }
+  const dedupe = new Set<string>();
+  const pushUniV2 = (value: unknown) => {
+    if (!value) return;
+    if (Array.isArray(value)) {
+      for (const item of value) pushUniV2(item);
+      return;
+    }
+    if (typeof value !== 'string') return;
+    try {
+      const router = getAddress(value as Address);
+      const key = `uniV2:${router.toLowerCase()}`;
+      if (dedupe.has(key)) return;
+      dedupe.add(key);
+      options.push({ type: 'UniV2', router });
+    } catch {
+      // ignore invalid address
+    }
+  };
+
+  pushUniV2(chainDex.camelotV2);
+  pushUniV2(chainDex.uniV2);
+  pushUniV2(chainDex.sushiV2);
+  pushUniV2(chainDex.quickSwapV2);
+  pushUniV2(chainDex.uniV2Routers);
 
   // Velodrome (Solidly V2 fork)
   if (chainDex.velodrome && chainDex.velodromeFactory) {
@@ -111,7 +200,14 @@ export function buildRouteOptions(
   
   // Determine a sensible default for price gap checking
   const gapRouter = uniV3Router ?? (chainDex.camelotV2 as Address) ?? (chainDex.velodrome as Address);
-  const gapFee = DEFAULT_UNI_FEES[1]; // 500 bps is a common default
+  let gapFee: number;
+  if (isStablePair) {
+    gapFee = 100;
+  } else if (uniFeesForPair.includes(3000)) {
+    gapFee = 3000;
+  } else {
+    gapFee = uniFeesForPair[0] ?? 500;
+  }
 
   return { options, gapFee, gapRouter };
 }

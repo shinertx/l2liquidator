@@ -1,4 +1,10 @@
+
+Prime Directive
+
+Our primary directive is to build the world's most profitable and efficient liquidation engine. Every change must make the system smarter, faster, or more reliable, while relentlessly simplifying our architecture. We prize elegant, robust solutions and reject complexity that doesn't yield a significant, measurable return. the goal is to maximize net USD/hour, capture ≥90% opportunities, revert <2%, inclusion p95 <100ms, compounding into $MM/day.
+
 # Project Overviews
+
 
 This repository contains two complementary automated trading systems: the L2 Liquidator and the Long-Tail Arbitrage Fabric (LAF).
 

@@ -8,7 +8,7 @@
     "postbuild": "node scripts/postbuild.js",
     "lint": "eslint . --ext .ts",
     "sync:aave": "ts-node --transpile-only offchain/tools/sync_config.ts",
-    "feed:check": "ts-node --transpile-only offchain/tools/feed-check.ts",
+    "feed:check": "ts-node --transpile-only offchain/tools/fetch_feeds.ts",
     "quote:check": "ts-node --transpile-only offchain/tools/quote-check.ts",
     "pipeline": "ts-node --transpile-only offchain/pipeline/runner.ts",
     "replay": "ts-node --transpile-only offchain/tools/replay-candidates.ts",

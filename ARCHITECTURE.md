@@ -3,7 +3,7 @@
 This document captures how the codebase is structured end-to-end so new contributors can understand the moving pieces and how they interact. It now contains **two** execution surfaces that share infrastructure but run independently:
 
 1. **L2 Micro-Liquidator** – the original Aave v3 liquidation engine (Arbitrum / Optimism / Base / Polygon).
-2. **Long-Tail Arbitrage Fabric (LAF)** – an optional arbitrage module that reuses the same watcher → scorer → executor pipeline but discovers swaps instead of liquidations. **TODO:** Restore the full fabric configuration (single-hop, triangular, cross-chain) and validate venue readiness.
+2. **Long-Tail Arbitrage Fabric (LAF)** – an optional arbitrage module that reuses the same watcher → scorer → executor pipeline but discovers swaps instead of liquidations. Single-hop, triangular, and cross-chain solvers now ship enabled by default; keep an eye on the new Fabric readiness metrics before turning up additional venues.
 
 Both systems live in this repository, share Redis/Postgres/Prometheus, and can run side-by-side without stepping on each other.
 
@@ -62,7 +62,7 @@ Both systems live in this repository, share Redis/Postgres/Prometheus, and can r
      - Only owner/executor addresses can call, router allowlist and minProfit enforced
    - ABI lives in `offchain/executor/Liquidator.abi.json`.
 
-6. **Telemetry & Ops** **TODO:** Extend dashboards/alerts to cover Coinbase-backed Morpho markets and LAF.
+6. **Telemetry & Ops** Next step: wire the `protocol_markets_enabled` and Fabric readiness gauges into Grafana/Alertmanager so Coinbase-backed Morpho markets and LAF raise actionable alerts.
 - `offchain/infra/logger.ts` (Pino) writes JSON logs to stdout and `logs/live.log` via `logs/log_insights.js`
 - `offchain/infra/metrics.ts` exposes Prometheus metrics (`simulate_duration_seconds`, `pnl_per_gas`, etc.) served by `offchain/infra/metrics_server.ts` on port 9464.
  - `offchain/risk_engine/server.ts` (booted via `npm run risk-engine`) stores adaptive threshold snapshots, ingests analytics feedback, and emits updated guardrails.
@@ -130,11 +130,11 @@ Avalanche Hunter v2 is the next evolution of the long-tail liquidation program. 
                                           └-> [OpStore / Postgres] -> [Treasury Sweeps]
 ```
 
-* **Adapters** isolate protocol quirks. Morpho Blue, Silo, and (later) Ajna each implement discovery, candidate streaming, parameter reads, and bundle construction. **TODO:** Extend adapters for Base Morpho + Coinbase listings.
-* **Watchers** subscribe to adapter feeds (`Borrow`, `Repay`, `Liquidate`, `NewSilo`, etc.) and poll health states. A dual-price watcher (`DEPEG_MODE`) can be toggled to compare oracle vs spot. **TODO:** Verify feed coverage for new assets (USR, USD0, Pendle PTs).
+* **Adapters** isolate protocol quirks. Morpho Blue, Silo, and (later) Ajna each implement discovery, candidate streaming, parameter reads, and bundle construction. Action item: extend the Morpho adapter for Base + Coinbase listings and promote it out of “stub” mode.
+* **Watchers** subscribe to adapter feeds (`Borrow`, `Repay`, `Liquidate`, `NewSilo`, etc.) and poll health states. A dual-price watcher (`DEPEG_MODE`) can be toggled to compare oracle vs spot. Use `npm run feed:check -- --write` to keep Chainlink feeds current for USR, USD0, Pendle PTs, and other new assets before re-enabling markets.
 * **Scorer** evaluates each candidate with venue-aware bonus math, per-chain gas curves, router pre-quotes, revert statistics, and optional depeg adjustments. Hard guards enforce `net >= MIN_NET_USD`, `gas/net <= 1/PNL_MULT_MIN`, `revert <= MAX_REVERT_RATE`, and depth constraints. **TODO:** Tune pre-liquidation sizing ($300–$3k) and require pnl/gas ≥ 4×.
-* **Exec Workers** operate under per-market semaphores, assembling a single private bundle: optional flash borrow → protocol liquidation → exit swap → flash repayment → profit sweep. **TODO:** Wire RFQ/intent exits for BTC/cbBTC routes.
-* **Exit Router** evaluates AMM, RFQ, and Intent paths, picking the cheapest route that satisfies min-out and embedding it in the same bundle to avoid backruns. **TODO:** Validate revert tracking and slippage guards under new venues.
+* **Exec Workers** operate under per-market semaphores, assembling a single private bundle: optional flash borrow → protocol liquidation → exit swap → flash repayment → profit sweep. Exits are AMM-only today; for large BTC/cbBTC clips keep `risk.maxRepayUsd` conservative or route through inventory mode until the RFQ/intent codec ships.
+* **Exit Router** evaluates AMM, RFQ, and Intent paths, picking the cheapest route that satisfies min-out and embedding it in the same bundle to avoid backruns. Revert tracking + slippage guard telemetry is in place; extend it whenever you introduce new venues.
 * **Treasury** manages chain-local USDC buckets, auto top-ups, and scheduled sweeps. Spend caps enforce per-chain daily exposure limits. **TODO:** Raise BTC repay caps ($10–30k) and update sweep policy.
 * **Telemetry & SLO Gates** monitor inclusion p95, revert rates, pnl/gas, and net USD/hour. Breaches trigger concurrency reduction and, after repeated strikes, auto-pauses for the offending market or chain. **TODO:** Add alerts for Coinbase-backed vault changes and Morpho/Base anomalies.
 

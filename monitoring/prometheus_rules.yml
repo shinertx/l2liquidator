@@ -35,6 +35,15 @@ groups:
           summary: 'Sequencer health degraded on {{ $labels.chain }}'
           description: 'Sequencer skip counter increasing; investigate L2 sequencer status and pause live executions if needed.'
 
+      - alert: ProtocolMarketsDisabled
+        expr: protocol_markets_enabled{protocol=~"aavev3|morphoblue"} == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'No enabled {{ $labels.protocol }} markets on {{ $labels.chain }}'
+          description: 'protocol_markets_enabled dropped to zero for {{ $labels.protocol }} on {{ $labels.chain }}. Verify config.yaml and make sure markets are still enabled before resuming.'
+
       - alert: RpcRateLimit429
         expr: pg_custom_liquidation_attempts_error_bucket_15m{bucket="429_rate_limit"} > 0
         for: 2m
@@ -43,6 +52,15 @@ groups:
         annotations:
           summary: 'RPC 429 rate limits detected'
           description: '{{ $value | printf "%.0f" }} liquidation errors due to RPC 429 in the last 15 minutes. Switch providers or enable private lanes.'
+
+      - alert: FabricVenueRegression
+        expr: (fabric_pairs_configured - fabric_pairs_ready) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Fabric venues missing depth on {{ $labels.chain }}'
+          description: '{{ $value | printf "%.0f" }} configured Fabric pair(s) lack a ready venue. Check pool allowances, pool availability, and quoter health.'
 
       - alert: MonitoringTargetDown
         expr: up{job=~"orchestrator|orchestrator-host|postgres-exporter|loki|promtail"} == 0

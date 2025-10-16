@@ -52,6 +52,21 @@ export const gauge = {
     help: 'Average health factor drift relative to threshold',
     labelNames: ['chain', 'pair'],
   }),
+  protocolMarkets: new client.Gauge({
+    name: 'protocol_markets_enabled',
+    help: 'Enabled markets per protocol and chain',
+    labelNames: ['protocol', 'chain'],
+  }),
+  fabricPairsConfigured: new client.Gauge({
+    name: 'fabric_pairs_configured',
+    help: 'Configured Fabric pairs per chain',
+    labelNames: ['chain'],
+  }),
+  fabricPairsReady: new client.Gauge({
+    name: 'fabric_pairs_ready',
+    help: 'Fabric pairs with viable venues per chain',
+    labelNames: ['chain'],
+  }),
 };
 registry.registerMetric(gauge.pnlPerGas);
 registry.registerMetric(gauge.hitRate);
@@ -65,6 +80,9 @@ registry.registerMetric(gauge.routeOptions);
 registry.registerMetric(gauge.analyticsHitRate);
 registry.registerMetric(gauge.analyticsOpportunityCost);
 registry.registerMetric(gauge.analyticsModelDrift);
+registry.registerMetric(gauge.protocolMarkets);
+registry.registerMetric(gauge.fabricPairsConfigured);
+registry.registerMetric(gauge.fabricPairsReady);
 
 export const histogram = {
   dbQueryDuration: new client.Histogram({
@@ -182,6 +200,11 @@ export const counter = {
     name: 'subgraph_price_zero_total',
     help: 'Subgraph reserves that reported a zero price',
     labelNames: ['chain', 'token', 'role'],
+  }),
+  subgraphPriceFallback: new client.Counter({
+    name: 'subgraph_price_fallback_total',
+    help: 'Reserves that relied on fallback pricing when subgraph returned zero',
+    labelNames: ['chain', 'token', 'role', 'source'],
   }),
   lafEdges: new client.Counter({
     name: 'laf_edges_total',

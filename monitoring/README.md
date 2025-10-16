@@ -34,6 +34,9 @@ docker compose down grafana prometheus alertmanager loki promtail postgres-expor
   - *Plan Funnel* – Ready vs Sent vs Error deltas; helps spot policy choke points.
   - *Sequencer Health* – Increments of `candidates_sequencer_skip_total`.
   - *RPC Error Rate* – `rpc_errors_total` per provider (public vs private).
+- **Coverage**
+  - *Protocol Markets Enabled* – Live count of `protocol_markets_enabled` per chain/protocol. Sudden drops usually mean config drift or a disabled market.
+  - *Fabric Venue Coverage* – Ready vs configured pairs plus missing count; use it to confirm two viable pools per Fabric pair before going live.
 - **Skips & Taxonomy**
   - Gap skip bar chart (top 25 reason strings, truncated).
   - Table of gap/policy skips by asset & reason via Postgres.
@@ -65,6 +68,8 @@ Auto-refresh is set to 30s. The entire dashboard uses the dark theme and is mean
   - **CaptureDrop** – >10 ready but zero sent in 5m
   - **SequencerDegraded** – sequencer skip increments for 2m
   - **RpcRateLimit429** – 429 error bucket >0 in 15m window
+  - **ProtocolMarketsDisabled** – `protocol_markets_enabled` hits zero for Aave or Morpho on any chain for 10m
+  - **FabricVenueRegression** – configured Fabric pairs exceed ready pairs for 15m
   - **MonitoringTargetDown** – any scrape target down for 1m
 - Alertmanager ships notifications to `http://localhost:18000/webhook`. Replace this endpoint in `monitoring/alertmanager.yml` with your Slack/PagerDuty webhook and restart `docker compose up -d alertmanager prometheus`.
 
@@ -133,4 +138,3 @@ After deploying routing or guardrail updates, run this 15-minute checklist befor
 6. **DB audit** – run `docker compose exec db psql -U liquidator -c "select chain_id, status, count(*) from liquidation_attempts where created_at > now() - interval '10 minutes' group by 1,2 order by 1,2;"` and verify the ratio of `policy_skip` with reason `hf` tightens after adaptive tweaks.
 
 Document completion of each deployment in your ops journal (Notion → Liquidator Ops → Post-Change Logs) with Prometheus snapshots and log excerpts attached.
-

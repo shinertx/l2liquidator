@@ -224,7 +224,8 @@ async function estimateGas(
 const SIM_DEBUG = process.env.SIM_DEBUG === '1';
 
 export async function simulate(input: SimInput): Promise<Plan | null> {
-  const debugReasons: Array<{ stage: string; detail?: unknown }> = SIM_DEBUG ? [] : [];
+  type DebugReason = { stage: string; detail?: unknown } & Record<string, unknown>;
+  const debugReasons: DebugReason[] = SIM_DEBUG ? [] : [];
   const protocolKey: ProtocolKey = input.protocol ?? (input.morpho ? 'morphoblue' : 'aavev3');
 
   if (input.pricesUsd.debt <= 0 || input.pricesUsd.coll <= 0) {
@@ -404,7 +405,30 @@ export async function simulate(input: SimInput): Promise<Plan | null> {
       } satisfies EncodedPlanArgs;
     }
 
-    const gasEstimate = await estimateGas(input.client, input.chain, input.contract, input.executor, planArgs);
+    let gasEstimate: { totalEth: number; gasEth: number; l1Eth: number } | null;
+    try {
+      gasEstimate = await estimateGas(input.client, input.chain, input.contract, input.executor, planArgs);
+    } catch (err) {
+      if (err instanceof PlanRejectedError) {
+        if (SIM_DEBUG)
+          debugReasons.push({
+            stage: 'estimate-gas-reject',
+            detail: err.detail ?? { message: err.message, code: err.code },
+            route: {
+              dexId: route.dexId,
+              router: route.router,
+              uniFee: route.uniFee,
+              solidlyStable: route.solidlyStable,
+              solidlyFactory: route.solidlyFactory,
+            },
+            repay: repay.toString(),
+            amountOutMin: route.amountOutMin.toString(),
+            minProfit: minProfit.toString(),
+          });
+        continue;
+      }
+      throw err;
+    }
     if (!gasEstimate) {
       if (SIM_DEBUG) debugReasons.push({ stage: 'estimate-gas-null', detail: { dexId: route.dexId } });
       continue;
@@ -432,13 +456,20 @@ export async function simulate(input: SimInput): Promise<Plan | null> {
 
   if (!best) {
     if (SIM_DEBUG) {
-      console.debug('simulate: no-plan', {
-        repayUsd,
-        minProfit: Number(minProfit) / Math.pow(10, input.debt.decimals),
-        floorBps: input.policy.floorBps,
-        gasCapUsd: input.gasCapUsd,
-        debugReasons,
-      });
+      console.debug(
+        'simulate: no-plan',
+        JSON.stringify(
+          {
+            repayUsd,
+            minProfit: Number(minProfit) / Math.pow(10, input.debt.decimals),
+            floorBps: input.policy.floorBps,
+            gasCapUsd: input.gasCapUsd,
+            debugReasons,
+          },
+          null,
+          2,
+        ),
+      );
     }
     return null;
   }

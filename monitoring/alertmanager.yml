@@ -11,6 +11,6 @@ route:
 receivers:
   - name: founder-webhook
     webhook_configs:
-      - url: ${SLACK_ALERT_WEBHOOK}
+      - url: http://127.0.0.1:65535/devnull
         send_resolved: true
-# Replace with a rotated webhook if you need to move channels.
+# Replace with a real webhook URL before enabling production alerts.

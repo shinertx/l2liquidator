@@ -51,7 +51,7 @@ start_docker_infrastructure() {
     
     log "Waiting for Redis to be ready..."
     for i in {1..30}; do
-        if docker exec l2liquidator-redis-1 redis-cli ping >/dev/null 2>&1; then
+    if docker exec l2liquidator-redis-1 redis-cli -p 6380 ping >/dev/null 2>&1; then
             log "✓ Redis is ready"
             break
         fi
@@ -74,7 +74,7 @@ start_orchestrator() {
     sleep 2
     
     # Start orchestrator
-    npm run dev > "logs/orchestrator_$(date -u +%Y%m%dT%H%M%SZ).log" 2>&1 &
+    PROM_PORT=9664 npm run dev > "logs/orchestrator_$(date -u +%Y%m%dT%H%M%SZ).log" 2>&1 &
     local pid=$!
     echo "$pid" > "$PROJECT_ROOT/orchestrator.pid"
     
