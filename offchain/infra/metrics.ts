@@ -67,6 +67,10 @@ export const gauge = {
     help: 'Fabric pairs with viable venues per chain',
     labelNames: ['chain'],
   }),
+  preLiqProfitUsd: new client.Gauge({
+    name: 'preliq_profit_usd',
+    help: 'Latest pre-liquidation profit in USD',
+  }),
 };
 registry.registerMetric(gauge.pnlPerGas);
 registry.registerMetric(gauge.hitRate);
@@ -83,6 +87,7 @@ registry.registerMetric(gauge.analyticsModelDrift);
 registry.registerMetric(gauge.protocolMarkets);
 registry.registerMetric(gauge.fabricPairsConfigured);
 registry.registerMetric(gauge.fabricPairsReady);
+registry.registerMetric(gauge.preLiqProfitUsd);
 
 export const histogram = {
   dbQueryDuration: new client.Histogram({
@@ -225,6 +230,30 @@ export const counter = {
     name: 'laf_graph_skip_total',
     help: 'Edges skipped by price-graph gating before full quoting',
     labelNames: ['chain', 'pair', 'reason'],
+  }),
+  preLiqAttempt: new client.Counter({
+    name: 'preliq_attempt_total',
+    help: 'Pre-liquidation attempts',
+    labelNames: ['chain'],
+  }),
+  preLiqSuccess: new client.Counter({
+    name: 'preliq_success_total',
+    help: 'Successful pre-liquidations',
+    labelNames: ['chain'],
+  }),
+  preLiqFailed: new client.Counter({
+    name: 'preliq_failed_total',
+    help: 'Failed pre-liquidations',
+    labelNames: ['chain'],
+  }),
+  preLiqRejected: new client.Counter({
+    name: 'preliq_rejected_total',
+    help: 'Pre-liquidations rejected by scorer',
+    labelNames: ['chain', 'reason'],
+  }),
+  preLiqError: new client.Counter({
+    name: 'preliq_error_total',
+    help: 'Pre-liquidation processing errors',
   }),
 };
 for (const metric of Object.values(counter) as client.Metric[]) {

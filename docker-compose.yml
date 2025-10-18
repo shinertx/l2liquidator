@@ -31,6 +31,7 @@ services:
       - "9464:9464"
     volumes:
       - ./.env:/app/.env:ro
+      - ./config.yaml:/app/config.yaml:ro
       - ./logs:/app/logs
     healthcheck:
       test: [

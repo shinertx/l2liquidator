@@ -213,6 +213,7 @@ async function buildMarkets(cfg: any, resolved: AppConfig): Promise<any[]> {
       symbolSet.add(symbol);
     }
     const symbols = Array.from(symbolSet).sort((a, b) => a.localeCompare(b));
+    const seen = new Set<string>();
     for (const debtSymbol of symbols) {
       if (deny.has(debtSymbol)) continue;
       const debtConfig = reserveConfigs.get(debtSymbol);
@@ -223,6 +224,8 @@ async function buildMarkets(cfg: any, resolved: AppConfig): Promise<any[]> {
         const collateralConfig = reserveConfigs.get(collateralSymbol);
         if (collateralConfig && !collateralConfig.collateral) continue;
         const bonusBps = collateralConfig?.liquidationBonusBps ?? null;
+        const key = `${chain.id}:${debtSymbol}->${collateralSymbol}`;
+        if (seen.has(key)) continue;
         markets.push({
           protocol: 'aavev3',
           chainId: chain.id,
@@ -232,6 +235,25 @@ async function buildMarkets(cfg: any, resolved: AppConfig): Promise<any[]> {
           bonusBps: clampBonus(bonusBps),
           enabled: Boolean(chain.enabled) && (debtConfig?.borrowable ?? true) && (collateralConfig?.collateral ?? true),
         });
+        seen.add(key);
+      }
+    }
+    const manual = MANUAL_MARKETS[chain.id];
+    if (manual) {
+      for (const entry of manual) {
+        if (deny.has(entry.debt) || deny.has(entry.collateral)) continue;
+        const key = `${chain.id}:${entry.debt}->${entry.collateral}`;
+        if (seen.has(key)) continue;
+        markets.push({
+          protocol: 'aavev3',
+          chainId: chain.id,
+          debtAsset: entry.debt,
+          collateralAsset: entry.collateral,
+          closeFactorBps: 5000,
+          bonusBps: clampBonus(entry.bonusBps ?? 750),
+          enabled: Boolean(chain.enabled),
+        });
+        seen.add(key);
       }
     }
   }
@@ -291,6 +313,106 @@ const MANUAL_TOKENS: Record<number, Record<string, TokenInfo>> = {
       chainlinkFeed: '0xAB594600376Ec9fD91F8e885dADF0CE036862dE0',
     },
   },
+};
+
+const MANUAL_MARKETS: Record<
+  number,
+  Array<{ debt: string; collateral: string; bonusBps?: number }>
+> = {
+  42161: [
+    { debt: 'USDT', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'USDT', collateral: 'WBTC', bonusBps: 650 },
+    { debt: 'USDT', collateral: 'rsETH', bonusBps: 750 },
+    { debt: 'USDT', collateral: 'AAVE', bonusBps: 750 },
+    { debt: 'USDT', collateral: 'ARB', bonusBps: 1000 },
+    { debt: 'USDT', collateral: 'LINK', bonusBps: 1000 },
+    { debt: 'USDT', collateral: 'rETH', bonusBps: 750 },
+    { debt: 'USDT', collateral: 'weETH', bonusBps: 750 },
+    { debt: 'USDT', collateral: 'wstETH', bonusBps: 720 },
+    { debt: 'USDT', collateral: 'ezETH', bonusBps: 750 },
+    { debt: 'USDCn', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'USDCn', collateral: 'WBTC', bonusBps: 650 },
+    { debt: 'USDCn', collateral: 'rsETH', bonusBps: 750 },
+    { debt: 'FRAX', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'FRAX', collateral: 'WBTC', bonusBps: 650 },
+    { debt: 'FRAX', collateral: 'rsETH', bonusBps: 750 },
+    { debt: 'FRAX', collateral: 'AAVE', bonusBps: 750 },
+    { debt: 'FRAX', collateral: 'ARB', bonusBps: 1000 },
+    { debt: 'FRAX', collateral: 'LINK', bonusBps: 1000 },
+    { debt: 'FRAX', collateral: 'rETH', bonusBps: 750 },
+    { debt: 'FRAX', collateral: 'weETH', bonusBps: 750 },
+    { debt: 'FRAX', collateral: 'wstETH', bonusBps: 720 },
+    { debt: 'FRAX', collateral: 'ezETH', bonusBps: 750 },
+    { debt: 'MAI', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'MAI', collateral: 'WBTC', bonusBps: 650 },
+    { debt: 'MAI', collateral: 'rsETH', bonusBps: 750 },
+    { debt: 'MAI', collateral: 'wstETH', bonusBps: 720 },
+    { debt: 'AAVE', collateral: 'WETH', bonusBps: 750 },
+    { debt: 'AAVE', collateral: 'WBTC', bonusBps: 750 },
+    { debt: 'AAVE', collateral: 'rsETH', bonusBps: 750 },
+    { debt: 'EURS', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'EURS', collateral: 'WBTC', bonusBps: 650 },
+    { debt: 'EURS', collateral: 'rsETH', bonusBps: 750 },
+    { debt: 'EURS', collateral: 'ARB', bonusBps: 1000 },
+    { debt: 'EURS', collateral: 'wstETH', bonusBps: 720 },
+    { debt: 'ezETH', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'ezETH', collateral: 'WBTC', bonusBps: 650 },
+    { debt: 'ezETH', collateral: 'rsETH', bonusBps: 750 },
+    { debt: 'tBTC', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'tBTC', collateral: 'USDC', bonusBps: 500 },
+    { debt: 'tBTC', collateral: 'rsETH', bonusBps: 750 },
+  ],
+  10: [
+    { debt: 'AAVE', collateral: 'WETH', bonusBps: 750 },
+    { debt: 'AAVE', collateral: 'WBTC', bonusBps: 750 },
+    { debt: 'AAVE', collateral: 'wstETH', bonusBps: 720 },
+    { debt: 'MAI', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'MAI', collateral: 'WBTC', bonusBps: 650 },
+    { debt: 'MAI', collateral: 'wstETH', bonusBps: 720 },
+    { debt: 'USDCn', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'USDCn', collateral: 'WBTC', bonusBps: 650 },
+    { debt: 'USDCn', collateral: 'wstETH', bonusBps: 720 },
+    { debt: 'sUSD', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'sUSD', collateral: 'WBTC', bonusBps: 650 },
+    { debt: 'sUSD', collateral: 'wstETH', bonusBps: 720 },
+  ],
+  8453: [
+    { debt: 'AAVE', collateral: 'cbETH', bonusBps: 750 },
+    { debt: 'AAVE', collateral: 'WETH', bonusBps: 750 },
+    { debt: 'GHO', collateral: 'cbETH', bonusBps: 500 },
+    { debt: 'GHO', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'LBTC', collateral: 'cbETH', bonusBps: 750 },
+    { debt: 'LBTC', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'ezETH', collateral: 'cbETH', bonusBps: 500 },
+    { debt: 'ezETH', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'ezETH', collateral: 'USDC', bonusBps: 500 },
+    { debt: 'wrsETH', collateral: 'cbETH', bonusBps: 500 },
+    { debt: 'wrsETH', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'wrsETH', collateral: 'USDC', bonusBps: 500 },
+  ],
+  137: [
+    { debt: 'BAL', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'BAL', collateral: 'WBTC', bonusBps: 650 },
+    { debt: 'BAL', collateral: 'USDC', bonusBps: 500 },
+    { debt: 'CRV', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'CRV', collateral: 'WBTC', bonusBps: 650 },
+    { debt: 'CRV', collateral: 'USDC', bonusBps: 500 },
+    { debt: 'DPI', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'DPI', collateral: 'WBTC', bonusBps: 650 },
+    { debt: 'DPI', collateral: 'USDC', bonusBps: 500 },
+    { debt: 'GHST', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'GHST', collateral: 'WBTC', bonusBps: 650 },
+    { debt: 'GHST', collateral: 'USDC', bonusBps: 500 },
+    { debt: 'SUSHI', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'SUSHI', collateral: 'WBTC', bonusBps: 650 },
+    { debt: 'SUSHI', collateral: 'USDC', bonusBps: 500 },
+    { debt: 'USDT', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'USDT', collateral: 'WBTC', bonusBps: 650 },
+    { debt: 'USDT', collateral: 'USDC', bonusBps: 500 },
+    { debt: 'USDCn', collateral: 'WETH', bonusBps: 500 },
+    { debt: 'USDCn', collateral: 'WBTC', bonusBps: 650 },
+    { debt: 'USDCn', collateral: 'USDC', bonusBps: 500 },
+  ],
 };
 
 type AssetPolicy = {

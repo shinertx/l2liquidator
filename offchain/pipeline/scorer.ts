@@ -2,7 +2,7 @@ import { performance } from 'perf_hooks';
 import type { Address } from 'viem';
 import { log } from '../infra/logger';
 import type { AppConfig, ChainCfg } from '../infra/config';
-import { lookupAssetPolicy, lookupToken, symbolsEqual } from '../util/symbols';
+import { lookupAssetPolicy, lookupToken, symbolsEqual, isPeggedPairSymbol } from '../util/symbols';
 import { buildRouteOptions } from '../util/routes';
 import { oracleDexGapBps, oraclePriceUsd, dexPriceRatio } from '../indexer/price_watcher';
 import { AdaptiveThresholdsProvider } from '../infra/adaptive_thresholds_provider';
@@ -17,6 +17,7 @@ const DEFAULT_CLOSE_FACTOR_BPS = 5_000;
 const DEFAULT_BONUS_BPS = 800;
 const DEFAULT_MIN_NET_USD = Number(process.env.MIN_NET_USD ?? 1.5);
 const DEFAULT_PNL_MULT_MIN = Number(process.env.PNL_MULT_MIN ?? 3.5);
+const PEGGED_GAP_CAP_BPS = Number(process.env.PEGGED_GAP_CAP_BPS ?? 120);
 
 export type ScoreOutcome = ScoredPlan | ScoreRejection;
 
@@ -99,10 +100,10 @@ export class Scorer {
 
     const client = getPublicClient(chain);
 
-    let debtPriceUsd = await oraclePriceUsd(client, debtToken);
-    let collPriceUsd = await oraclePriceUsd(client, collateralToken);
+    let debtPriceUsd = await oraclePriceUsd(client, debtToken, chain);
+    let collPriceUsd = await oraclePriceUsd(client, collateralToken, chain);
     if (debtPriceUsd == null || collPriceUsd == null) {
-      const { options: routeOptions, gapFee, gapRouter } = buildRouteOptions(
+      const { options: routeOptions } = buildRouteOptions(
         this.cfg,
         chain,
         debtTokenEntry.key,
@@ -110,7 +111,7 @@ export class Scorer {
       );
       if (routeOptions.length > 0) {
         try {
-          const ratio = await dexPriceRatio({ client, chain, collateral: collateralToken, debt: debtToken, fee: gapFee, router: gapRouter });
+          const ratio = await dexPriceRatio({ client, chain, collateral: collateralToken, debt: debtToken, routeOptions });
           if (ratio && Number.isFinite(ratio) && ratio > 0) {
             if (collPriceUsd == null && debtPriceUsd != null && debtPriceUsd > 0) {
               collPriceUsd = debtPriceUsd * ratio;
@@ -132,13 +133,13 @@ export class Scorer {
     const nativeToken = chain.tokens.WETH ?? chain.tokens.ETH ?? debtToken;
     let nativePriceUsd = debtPriceUsd;
     if (nativeToken?.chainlinkFeed) {
-      const nativePrice = await oraclePriceUsd(client, nativeToken);
+      const nativePrice = await oraclePriceUsd(client, nativeToken, chain);
       if (nativePrice && nativePrice > 0) {
         nativePriceUsd = nativePrice;
       }
     }
 
-    const { options: routeOptions, gapFee, gapRouter } = buildRouteOptions(
+    const { options: routeOptions } = buildRouteOptions(
       this.cfg,
       chain,
       debtTokenEntry.key,
@@ -153,10 +154,12 @@ export class Scorer {
       chain,
       collateral: collateralToken,
       debt: debtToken,
-      fee: gapFee,
-      router: gapRouter,
+      routeOptions,
     });
-    const baseGapCapBps = policy.gapCapBps ?? 100;
+    let baseGapCapBps = policy.gapCapBps ?? 100;
+    if (isPeggedPairSymbol(debtTokenEntry.key, collateralTokenEntry.key)) {
+      baseGapCapBps = Math.max(baseGapCapBps, PEGGED_GAP_CAP_BPS);
+    }
 
     const adaptive = await this.adaptive.update({
       chainId: chain.id,
@@ -206,7 +209,8 @@ export class Scorer {
       }
     }
 
-    const effectiveGapCap = Math.min(baseGapCapBps, adaptive.gapCapBps ?? baseGapCapBps);
+  const adaptiveGapCap = adaptive.gapCapBps ?? baseGapCapBps;
+  const effectiveGapCap = Math.max(20, Math.min(adaptiveGapCap, baseGapCapBps + 200));
     if (gapBps > effectiveGapCap) {
       return {
         candidate,

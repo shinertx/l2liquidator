@@ -35,6 +35,11 @@ export const SUBGRAPH_ENV_KEYS: Record<number, string> = {
   137: 'AAVE_V3_SUBGRAPH_POLYGON',
 };
 
+// Seamless Protocol subgraph URLs (Base only)
+export const SEAMLESS_SUBGRAPH_URL: Record<number, string> = {
+  8453: 'https://api.goldsky.com/api/public/project_clsk1wzatdsls01wchl2e4n0y/subgraphs/seamless-mainnet/prod/gn',
+};
+
 const SUBGRAPH_IDS: Record<number, string> = {
   42161: 'DLuE98kEb5pQNXAcKFQGQgfSQ57Xdou4jnVbAEqMfy3B',
   10: 'DSfLz8oQBUeU5atALgUFQKMTSYV9mZAVYp4noLSXAfvb',
@@ -153,8 +158,16 @@ function recordSubgraphError(chainId: number, status: number | null): void {
 
 export function buildSubgraphUrl(
   chainId: number,
+  protocol: ProtocolKey,
   overrideMap?: Partial<Record<number, string | undefined>>
 ): string {
+  // If protocol is seamless, use Seamless subgraph
+  if (protocol === 'seamless') {
+    const seamlessUrl = SEAMLESS_SUBGRAPH_URL[chainId];
+    if (seamlessUrl) return seamlessUrl;
+    // Fall through to Aave v3 if Seamless not available for this chain
+  }
+
   const override = overrideMap?.[chainId];
   if (isValidOverride(override)) {
     return override;
@@ -771,7 +784,7 @@ export async function* streamCandidates(
     for (const chain of cfg.chains.filter(
       (c) => c.enabled && (!allowedChainSet || allowedChainSet.has(c.id))
     )) {
-      const subgraph = buildSubgraphUrl(chain.id, opts.subgraphOverrides);
+      const subgraph = buildSubgraphUrl(chain.id, opts.protocol, opts.subgraphOverrides);
       if (!subgraph) continue;
 
       const backoff = backoffs.get(chain.id);
@@ -856,7 +869,7 @@ export async function fetchBorrowerCandidates(
   if (opts.chainIds && !opts.chainIds.includes(chain.id)) {
     return [];
   }
-  const subgraph = buildSubgraphUrl(chain.id, opts.subgraphOverrides);
+  const subgraph = buildSubgraphUrl(chain.id, opts.protocol, opts.subgraphOverrides);
   if (!subgraph) return [];
 
   const userId = borrower.toLowerCase();
@@ -893,7 +906,7 @@ export async function pollChainCandidatesOnce(
   if (opts.chainIds && !opts.chainIds.includes(chain.id)) {
     return [];
   }
-  const subgraph = buildSubgraphUrl(chain.id, opts.subgraphOverrides);
+  const subgraph = buildSubgraphUrl(chain.id, opts.protocol, opts.subgraphOverrides);
   if (!subgraph) return [];
   const out: Candidate[] = [];
 

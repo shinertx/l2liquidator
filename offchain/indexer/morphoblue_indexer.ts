@@ -1,5 +1,8 @@
 import type { AppConfig, ChainCfg } from '../infra/config';
 import type { Candidate } from './aave_indexer';
+import { getPublicClient, type ManagedClient } from '../infra/rpc_clients';
+import { parseAbiItem, type Address, type Hash, encodeAbiParameters, keccak256, getCreate2Address } from 'viem';
+import { base, arbitrum, optimism } from 'viem/chains';
 
 const DEFAULT_ENDPOINT =
   process.env.MORPHO_BLUE_GRAPHQL_ENDPOINT?.trim() ??
@@ -19,8 +22,24 @@ const parsedChainIds = (process.env.MORPHO_BLUE_CHAIN_IDS ?? '1')
   .filter((value) => Number.isFinite(value) && value > 0);
 const SUPPORTED_CHAIN_IDS = parsedChainIds.length > 0 ? parsedChainIds : [1];
 
+// Pre-liquidation feature flags and configuration
+const PRELIQ_ENABLED = process.env.PRELIQ_ENABLED === '1';
+const MORPHO_BLUE = '0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb' as Address;
+const PRELIQ_FACTORY = {
+  [base.id]: '0x0000000000000000000000000000000000000000' as Address,
+  [arbitrum.id]: '0x0000000000000000000000000000000000000000' as Address,
+  [optimism.id]: '0x0000000000000000000000000000000000000000' as Address,
+} as const;
+
 function isSupportedChain(chainId: number): boolean {
   return SUPPORTED_CHAIN_IDS.includes(chainId);
+}
+
+function getViemChain(chainId: number) {
+  if (chainId === base.id) return base;
+  if (chainId === arbitrum.id) return arbitrum;
+  if (chainId === optimism.id) return optimism;
+  throw new Error(`Unsupported chain: ${chainId}`);
 }
 
 type MorphoMarketPosition = {
@@ -126,6 +145,190 @@ function toCandidate(chain: ChainCfg, position: MorphoMarketPosition): Candidate
   };
 }
 
+// --- Pre-Liquidation Offer Enrichment ---
+
+type PreLiqOffer = {
+  offerAddress: Address;
+  effectiveCloseFactor: number;
+  effectiveLiquidationIncentive: number;
+  oracleAddress: Address;
+  expiry: bigint;
+};
+
+/**
+ * Compute CREATE2 address for a pre-liquidation offer
+ * Address = CREATE2(factory, keccak256(borrower, marketId), initCodeHash)
+ */
+function computeOfferAddress(chainId: number, borrower: Address, marketId: Hash): Address {
+  const factory = PRELIQ_FACTORY[chainId as keyof typeof PRELIQ_FACTORY];
+  if (!factory || factory === '0x0000000000000000000000000000000000000000') {
+    return '0x0000000000000000000000000000000000000000';
+  }
+
+  // salt = keccak256(abi.encode(borrower, marketId))
+  const salt = keccak256(
+    encodeAbiParameters(
+      [{ type: 'address' }, { type: 'bytes32' }],
+      [borrower, marketId]
+    )
+  );
+
+  // TODO: Replace this placeholder with actual initCodeHash after contract deployment
+  const initCodeHash = '0x0000000000000000000000000000000000000000000000000000000000000000' as Hash;
+
+  return getCreate2Address({ from: factory, salt, bytecodeHash: initCodeHash });
+}
+
+/**
+ * Check if borrower has authorized the pre-liq offer to liquidate on their behalf
+ */
+async function checkOfferAuthorization(
+  client: ManagedClient,
+  borrower: Address,
+  offerAddress: Address
+): Promise<boolean> {
+  if (offerAddress === '0x0000000000000000000000000000000000000000') return false;
+
+  try {
+    const authorized = await client.readContract({
+      address: MORPHO_BLUE,
+      abi: [{
+        type: 'function',
+        name: 'isAuthorized',
+        stateMutability: 'view',
+        inputs: [
+          { name: 'authorizer', type: 'address' },
+          { name: 'authorized', type: 'address' }
+        ],
+        outputs: [{ name: '', type: 'bool' }],
+      }],
+      functionName: 'isAuthorized',
+      args: [borrower, offerAddress],
+    }) as boolean;
+    return authorized;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fetch pre-liq offer parameters from the deployed contract
+ * Returns effective CF and LIF based on current health factor via linear interpolation
+ */
+async function fetchOfferParams(
+  client: ManagedClient,
+  offerAddress: Address,
+  healthFactor: number
+): Promise<Omit<PreLiqOffer, 'offerAddress'> | null> {
+  if (offerAddress === '0x0000000000000000000000000000000000000000') return null;
+
+  try {
+    // Parallel reads for all offer parameters
+    const [preLLTV, preLCF1, preLCF2, preLIF1, preLIF2, oracle, expiry] = await Promise.all([
+      client.readContract({
+        address: offerAddress,
+        abi: [{ type: 'function', name: 'preLLTV', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }],
+        functionName: 'preLLTV',
+      }) as Promise<bigint>,
+      client.readContract({
+        address: offerAddress,
+        abi: [{ type: 'function', name: 'preLCF1', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }],
+        functionName: 'preLCF1',
+      }) as Promise<bigint>,
+      client.readContract({
+        address: offerAddress,
+        abi: [{ type: 'function', name: 'preLCF2', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }],
+        functionName: 'preLCF2',
+      }) as Promise<bigint>,
+      client.readContract({
+        address: offerAddress,
+        abi: [{ type: 'function', name: 'preLIF1', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }],
+        functionName: 'preLIF1',
+      }) as Promise<bigint>,
+      client.readContract({
+        address: offerAddress,
+        abi: [{ type: 'function', name: 'preLIF2', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }],
+        functionName: 'preLIF2',
+      }) as Promise<bigint>,
+      client.readContract({
+        address: offerAddress,
+        abi: [{ type: 'function', name: 'oracle', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] }],
+        functionName: 'oracle',
+      }) as Promise<Address>,
+      client.readContract({
+        address: offerAddress,
+        abi: [{ type: 'function', name: 'expiry', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }],
+        functionName: 'expiry',
+      }) as Promise<bigint>,
+    ]);
+
+    // Linear interpolation: HF ranges from preLLTV/1e18 (CF=preLCF2, LIF=preLIF2) to 1.0 (CF=preLCF1, LIF=preLIF1)
+    const hfMin = Number(preLLTV) / 1e18;
+    const hfMax = 1.0;
+    const t = Math.max(0, Math.min(1, (healthFactor - hfMin) / (hfMax - hfMin)));
+
+    const effectiveCloseFactor = Number(preLCF1) + t * (Number(preLCF2) - Number(preLCF1));
+    const effectiveLiquidationIncentive = Number(preLIF1) + t * (Number(preLIF2) - Number(preLIF1));
+
+    return {
+      effectiveCloseFactor: effectiveCloseFactor / 1e18,
+      effectiveLiquidationIncentive: effectiveLiquidationIncentive / 1e18,
+      oracleAddress: oracle,
+      expiry,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Enrich a Morpho Blue candidate with pre-liquidation offer if available
+ * Called when 1.0 < HF <= 1.05 to check for offers
+ */
+async function enrichWithPreLiqOffer(
+  candidate: Candidate,
+  chain: ChainCfg
+): Promise<Candidate> {
+  if (!PRELIQ_ENABLED) return candidate;
+  if (!candidate.morpho) return candidate;
+
+  const { healthFactor } = candidate;
+  if (!healthFactor || healthFactor >= 1.05 || healthFactor < 1.0) return candidate;
+
+  const client = getPublicClient(chain);
+
+  // Compute offer address via CREATE2
+  const marketId = candidate.morpho.uniqueKey as Hash;
+  const offerAddress = computeOfferAddress(chain.id, candidate.borrower, marketId);
+
+  if (offerAddress === '0x0000000000000000000000000000000000000000') {
+    return candidate;
+  }
+
+  // Check authorization
+  const authorized = await checkOfferAuthorization(client, candidate.borrower, offerAddress);
+  if (!authorized) return candidate;
+
+  // Fetch offer parameters
+  const offerParams = await fetchOfferParams(client, offerAddress, healthFactor);
+  if (!offerParams) return candidate;
+
+  // Check expiry
+  const now = BigInt(Math.floor(Date.now() / 1000));
+  if (offerParams.expiry <= now) return candidate;
+
+  // Enrich candidate with pre-liq offer
+  return {
+    ...candidate,
+    preliq: {
+      offerAddress,
+      ...offerParams,
+    },
+  } as Candidate & { preliq: PreLiqOffer };
+}
+
+// --- End Pre-Liquidation Enrichment ---
+
 async function fetchMorphoPositions(
   chain: ChainCfg,
   limit: number,
@@ -184,11 +387,21 @@ async function fetchMorphoPositions(
       return { items: [], notes: `morpho-query-error:${message}` };
     }
     const positions = payload.data?.marketPositions?.items ?? [];
-    return {
-      items: positions
-        .map((item) => toCandidate(chain, item))
-        .filter((candidate): candidate is Candidate => candidate !== null),
-    };
+    
+    // Convert positions to candidates
+    const baseCandidates = positions
+      .map((item) => toCandidate(chain, item))
+      .filter((candidate): candidate is Candidate => candidate !== null);
+
+    // Enrich with pre-liq offers if enabled (parallel enrichment for performance)
+    if (PRELIQ_ENABLED) {
+      const enrichedCandidates = await Promise.all(
+        baseCandidates.map((candidate) => enrichWithPreLiqOffer(candidate, chain))
+      );
+      return { items: enrichedCandidates };
+    }
+
+    return { items: baseCandidates };
   } catch (err) {
     return { items: [], notes: `morpho-fetch-error:${(err as Error).message}` };
   }

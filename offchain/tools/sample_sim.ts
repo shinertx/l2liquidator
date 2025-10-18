@@ -56,13 +56,13 @@ async function main() {
     const collateralToken = { ...collateralTokenEntry.value, symbol: candidate.collateral.symbol, amount: candidate.collateral.amount };
     const policy = policyEntry.value;
 
-    const debtPriceUsd = (await oraclePriceUsd(client, debtTokenEntry.value)) ?? 0;
-    const collPriceUsd = (await oraclePriceUsd(client, collateralTokenEntry.value)) ?? 0;
+    const debtPriceUsd = (await oraclePriceUsd(client, debtTokenEntry.value, chain)) ?? 0;
+    const collPriceUsd = (await oraclePriceUsd(client, collateralTokenEntry.value, chain)) ?? 0;
 
     const nativeToken = chain.tokens.WETH ?? chain.tokens.ETH ?? debtTokenEntry.value;
     let nativePriceUsd = debtPriceUsd;
     if (nativeToken) {
-      const maybe = await oraclePriceUsd(client, nativeToken);
+      const maybe = await oraclePriceUsd(client, nativeToken, chain);
       if (maybe && maybe > 0) nativePriceUsd = maybe;
     }
 

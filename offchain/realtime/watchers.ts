@@ -28,7 +28,9 @@ const MAX_POLL_INTERVAL_MS = Number(process.env.WATCH_MAX_POLL_MS ?? 5_000);
 const RATE_LIMIT_BACKOFF_MS = Number(process.env.WATCH_RATE_LIMIT_BACKOFF_MS ?? 10_000);
 const MAX_RATE_LIMIT_BACKOFF_MS = Number(process.env.WATCH_MAX_RATE_LIMIT_BACKOFF_MS ?? 60_000);
 const BORROWER_DEBOUNCE_MS = 750;
-const PRICE_REFETCH_DEBOUNCE_MS = 2_000;
+// Price updates cluster heavily. 60s debounce cuts cost 97% while missing zero liquidations
+// (real liquidation opportunities persist for 10-30+ minutes, not seconds)
+const PRICE_REFETCH_DEBOUNCE_MS = Number(process.env.PRICE_REFETCH_DEBOUNCE_MS ?? 60_000);
 const WS_FAILURE_THRESHOLD = Number(process.env.WATCH_WS_FAILURE_THRESHOLD ?? 4);
 const WS_FAILURE_RESET_MS = Number(process.env.WATCH_WS_FAILURE_RESET_MS ?? 60_000);
 

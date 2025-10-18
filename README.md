@@ -81,6 +81,31 @@ npm run dev
 
 **Not legal/financial advice. Use at your own risk.**
 
+### Production start (manual run)
+
+Once you have completed the go-live checklist and funded the strategy, you can bring the stack up manually without systemd:
+
+1. **Compile once** (after any config changes):
+   ```bash
+   npm run build
+   forge build
+   ```
+2. **Launch shared services**:
+   - Redis/Postgres (local docker compose or your managed endpoints).
+   - Risk engine: `npm run risk-engine`.
+   - Analytics feedback loop (optional but recommended): `npm run analytics:perf`.
+3. **Start the micro-liquidator** with production env vars loaded:
+   ```bash
+   ./scripts/dev_env.sh npm run dev
+   ```
+   The helper wraps `dotenv-expand` so secrets from `.env` are applied before `npm run dev`.
+4. **Monitor**:
+   - Metrics on `http://localhost:9464/metrics`.
+   - Logs in `logs/live.log`.
+   - Kill switch via the `KILL_SWITCH_FILE` path if you need to pause execution.
+
+For unattended operation, use the systemd units shipped under `ops/systemd/`, but the steps above are the quickest way to reproduce a production run in a shell.
+
 ### Autonomous operations (systemd + health checks)
 
 The repo ships first-class automation so the stack can survive host reboots, transient RPC failures, and container crashes without manual babysitting.

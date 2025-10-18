@@ -150,9 +150,9 @@ export async function runBacktest(options: BacktestOptions = {}): Promise<Backte
 
     const client = getClient(chain.rpc, chain.id);
     const debtPrice =
-      candidate.debtPriceUsd ?? (await oraclePriceUsd(client, debtToken)) ?? 1;
+      candidate.debtPriceUsd ?? (await oraclePriceUsd(client, debtToken, chain)) ?? 1;
     const collPrice =
-      candidate.collateralPriceUsd ?? (await oraclePriceUsd(client, collateralToken)) ?? debtPrice;
+      candidate.collateralPriceUsd ?? (await oraclePriceUsd(client, collateralToken, chain)) ?? debtPrice;
 
     const contract = liquidatorForChain(config, candidate.chainId);
     if (!contract) {
@@ -177,7 +177,7 @@ export async function runBacktest(options: BacktestOptions = {}): Promise<Backte
     let nativePriceUsd = debtPrice;
     if (nativeToken) {
       try {
-        const maybeNative = await oraclePriceUsd(client, nativeToken);
+        const maybeNative = await oraclePriceUsd(client, nativeToken, chain);
         if (maybeNative && maybeNative > 0) {
           nativePriceUsd = maybeNative;
         }

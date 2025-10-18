@@ -1,0 +1,52 @@
+# Seamless Protocol Markets (Base - 8453)
+# Add these to config.yaml markets section
+
+  # Seamless: USDC debt markets
+  - protocol: seamless
+    chainId: 8453
+    debtAsset: USDC
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  
+  - protocol: seamless
+    chainId: 8453
+    debtAsset: USDC
+    collateralAsset: cbETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  
+  - protocol: seamless
+    chainId: 8453
+    debtAsset: USDC
+    collateralAsset: wstETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+
+  # Seamless: WETH debt markets
+  - protocol: seamless
+    chainId: 8453
+    debtAsset: WETH
+    collateralAsset: cbETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+
+  - protocol: seamless
+    chainId: 8453
+    debtAsset: WETH
+    collateralAsset: wstETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+
+  - protocol: seamless
+    chainId: 8453
+    debtAsset: WETH
+    collateralAsset: USDC
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true

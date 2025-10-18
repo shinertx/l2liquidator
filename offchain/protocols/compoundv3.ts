@@ -1,5 +1,6 @@
 import type { AppConfig, ChainCfg } from '../infra/config';
 import type { Candidate } from '../indexer/aave_indexer';
+import { streamCompoundV3Candidates, pollCompoundV3CandidatesOnce } from '../indexer/compoundv3_indexer';
 import { PlanRejectedError as AavePlanRejectedError } from '../simulator/simulate';
 import type { ProtocolAdapter, SimulateFn } from './types';
 
@@ -9,12 +10,8 @@ const simulateNotImplemented: SimulateFn = async () => {
 
 export const compoundv3Adapter: ProtocolAdapter = {
   key: 'compoundv3',
-  async *streamCandidates(_cfg: AppConfig): AsyncIterable<Candidate> {
-    // Placeholder: candidates not yet implemented
-  },
-  async pollCandidatesOnce(_cfg: AppConfig, _chain: ChainCfg): Promise<Candidate[]> {
-    return [];
-  },
+  streamCandidates: streamCompoundV3Candidates,
+  pollCandidatesOnce: pollCompoundV3CandidatesOnce,
   simulate: simulateNotImplemented,
   PlanRejectedError: AavePlanRejectedError,
 };

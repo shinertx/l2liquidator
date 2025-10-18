@@ -6,6 +6,8 @@ contracts:
     "137": "0xEd4dB6eA97B7F9A877f529db65976702083CA64B"
     "8453": "0xEd4dB6eA97B7F9A877f529db65976702083CA64B"
     "42161": "0x727BB7c8C0F1Fc150F6d23Df197e639Af4506d91"
+  morphoBlueLiquidator:
+    "8453": "0x6700a690d7D50De503A83895870e163620ab877A"
 chains:
   - id: 1
     name: ethereum
@@ -38,6 +40,10 @@ chains:
     wsRpc: ${WS_ARB}
     privtx: ${PRIVTX_ARB}
     aaveProvider: "0xa97684EaD0E402dC232d5A977953DF7ECBaB3CDb"
+    compoundComets:
+      cUSDCv3: "0xA5EDBDD9646f8dFF606d7448e414884C7d905dCA"
+      cUSDCev3: "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf"
+      cWETHv3: "0x6f7D514bbD4aFf3BcD1140B7344b32f063dEe486"
     uniV3Router: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
     quoter: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e"
     sequencerFeed: "0xFdB631F5EE196F0ed6FAa767959853A9F217697D"
@@ -89,6 +95,8 @@ chains:
       rsETH:
         address: "0x4186bfc76e2e237523cbc30fd220fe055156b41f"
         decimals: 18
+        chainlinkFeed: "0xb0EA543f9F8d4B818550365d13F66Da747e1476A"
+        feedDenomination: eth
       tBTC:
         address: "0x6c84a8f1c29108F47a79964b5Fe888D4f4D0dE40"
         decimals: 18
@@ -194,6 +202,10 @@ chains:
     wsRpc: ${WS_BASE}
     privtx: ${PRIVTX_BASE}
     aaveProvider: ${BASE_AAVE_V3_PROVIDER}
+    seamlessProvider: "0x0E02EB705be325407707662C6f6d3466E939f3a0"
+    compoundComets:
+      cUSDCv3: "0xb125E6687d4313864e53df431d5425969c15Eb2F"
+      cWETHv3: "0x46e6b214b524310239732D51387075E0e70970bf"
     morphoProvider: "0xbbbbbbbbbb9cc5e90e3b3af64bdaf62c37eeffcb"
     uniV3Router: "0x2626664c2603336E57B271c5C0b26F421741e481"
     quoter: "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a"
@@ -366,6 +378,10 @@ assets:
     floorBps: 40
     gapCapBps: 90
     slippageBps: 40
+  AERO:
+    floorBps: 40
+    gapCapBps: 90
+    slippageBps: 40
   agEUR:
     floorBps: 50
     gapCapBps: 110
@@ -378,6 +394,10 @@ assets:
     floorBps: 40
     gapCapBps: 90
     slippageBps: 40
+  bsdETH: &a3
+    floorBps: 30
+    gapCapBps: 70
+    slippageBps: 30
   cbBTC:
     floorBps: 50
     gapCapBps: 110
@@ -398,6 +418,10 @@ assets:
     floorBps: 200
     gapCapBps: 500
     slippageBps: 150
+  doginme: &a1
+    floorBps: 50
+    gapCapBps: 110
+    slippageBps: 60
   DPI:
     floorBps: 40
     gapCapBps: 90
@@ -442,6 +466,7 @@ assets:
     floorBps: 50
     gapCapBps: 110
     slippageBps: 60
+  KTA: *a1
   LBTC:
     floorBps: 50
     gapCapBps: 110
@@ -450,6 +475,8 @@ assets:
     floorBps: 40
     gapCapBps: 80
     slippageBps: 30
+  LP-USR-24APR2025: *a1
+  LP-USR-25SEP2025: *a1
   LUSD:
     floorBps: 30
     gapCapBps: 50
@@ -462,6 +489,7 @@ assets:
     floorBps: 30
     gapCapBps: 70
     slippageBps: 30
+  mBASIS: *a1
   miMATIC:
     floorBps: 50
     gapCapBps: 110
@@ -470,10 +498,18 @@ assets:
     floorBps: 30
     gapCapBps: 70
     slippageBps: 30
+  mTBILL: &a2
+    floorBps: 30
+    gapCapBps: 50
+    slippageBps: 50
   OP:
     floorBps: 40
     gapCapBps: 90
     slippageBps: 40
+  PT-cUSDO-15JUL2025: *a1
+  PT-LBTC-29MAY2025: *a1
+  PT-USR-24APR2025: *a1
+  PT-USR-25SEP2025: *a1
   rETH:
     floorBps: 30
     gapCapBps: 70
@@ -482,6 +518,9 @@ assets:
     floorBps: 50
     gapCapBps: 110
     slippageBps: 60
+  sAMM-USDC/cUSDO: *a1
+  satUSD: *a1
+  stEUR: *a2
   stMATIC:
     floorBps: 30
     gapCapBps: 70
@@ -494,10 +533,15 @@ assets:
     floorBps: 40
     gapCapBps: 90
     slippageBps: 40
+  symbol:
+    floorBps: 50
+    gapCapBps: 110
+    slippageBps: 60
   tBTC:
     floorBps: 50
     gapCapBps: 110
     slippageBps: 60
+  TOSHI: *a1
   USDbC:
     floorBps: 30
     gapCapBps: 50
@@ -518,6 +562,8 @@ assets:
     floorBps: 50
     gapCapBps: 110
     slippageBps: 60
+  USDz: *a2
+  uSOL: *a1
   USR:
     floorBps: 50
     gapCapBps: 110
@@ -526,6 +572,7 @@ assets:
     floorBps: 999
     gapCapBps: 999
     slippageBps: 999
+  wbCOIN: *a1
   wBTC:
     floorBps: 30
     gapCapBps: 60
@@ -558,13 +605,37 @@ assets:
     floorBps: 30
     gapCapBps: 70
     slippageBps: 30
+  wsuperOETHb: *a3
+  wUSD+: *a2
   wUSDM:
     floorBps: 30
     gapCapBps: 60
     slippageBps: 40
+  WWFUSDC: *a1
 markets:
   - protocol: aavev3
     chainId: 10
+    debtAsset: AAVE
+    collateralAsset: WBTC
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 10
+    debtAsset: AAVE
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 10
+    debtAsset: AAVE
+    collateralAsset: wstETH
+    closeFactorBps: 5000
+    bonusBps: 720
+    enabled: true
+  - protocol: aavev3
+    chainId: 10
     debtAsset: DAI
     collateralAsset: AAVE
     closeFactorBps: 5000
@@ -782,6 +853,27 @@ markets:
     enabled: true
   - protocol: aavev3
     chainId: 10
+    debtAsset: MAI
+    collateralAsset: WBTC
+    closeFactorBps: 5000
+    bonusBps: 650
+    enabled: true
+  - protocol: aavev3
+    chainId: 10
+    debtAsset: MAI
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 10
+    debtAsset: MAI
+    collateralAsset: wstETH
+    closeFactorBps: 5000
+    bonusBps: 720
+    enabled: true
+  - protocol: aavev3
+    chainId: 10
     debtAsset: OP
     collateralAsset: AAVE
     closeFactorBps: 5000
@@ -922,6 +1014,27 @@ markets:
     enabled: true
   - protocol: aavev3
     chainId: 10
+    debtAsset: sUSD
+    collateralAsset: WBTC
+    closeFactorBps: 5000
+    bonusBps: 650
+    enabled: true
+  - protocol: aavev3
+    chainId: 10
+    debtAsset: sUSD
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 10
+    debtAsset: sUSD
+    collateralAsset: wstETH
+    closeFactorBps: 5000
+    bonusBps: 720
+    enabled: true
+  - protocol: aavev3
+    chainId: 10
     debtAsset: USDC
     collateralAsset: AAVE
     closeFactorBps: 5000
@@ -992,6 +1105,27 @@ markets:
     enabled: true
   - protocol: aavev3
     chainId: 10
+    debtAsset: USDCn
+    collateralAsset: WBTC
+    closeFactorBps: 5000
+    bonusBps: 650
+    enabled: true
+  - protocol: aavev3
+    chainId: 10
+    debtAsset: USDCn
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 10
+    debtAsset: USDCn
+    collateralAsset: wstETH
+    closeFactorBps: 5000
+    bonusBps: 720
+    enabled: true
+  - protocol: aavev3
+    chainId: 10
     debtAsset: USDT
     collateralAsset: AAVE
     closeFactorBps: 5000
@@ -1266,6 +1400,48 @@ markets:
   - protocol: aavev3
     chainId: 10
     debtAsset: wstETH
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: BAL
+    collateralAsset: USDC
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: BAL
+    collateralAsset: WBTC
+    closeFactorBps: 5000
+    bonusBps: 650
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: BAL
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: CRV
+    collateralAsset: USDC
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: CRV
+    collateralAsset: WBTC
+    closeFactorBps: 5000
+    bonusBps: 650
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: CRV
     collateralAsset: WETH
     closeFactorBps: 5000
     bonusBps: 500
@@ -1349,6 +1525,27 @@ markets:
     enabled: true
   - protocol: aavev3
     chainId: 137
+    debtAsset: DPI
+    collateralAsset: USDC
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: DPI
+    collateralAsset: WBTC
+    closeFactorBps: 5000
+    bonusBps: 650
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: DPI
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
     debtAsset: EURS
     collateralAsset: AAVE
     closeFactorBps: 5000
@@ -1423,6 +1620,27 @@ markets:
     collateralAsset: wstETH
     closeFactorBps: 5000
     bonusBps: 720
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: GHST
+    collateralAsset: USDC
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: GHST
+    collateralAsset: WBTC
+    closeFactorBps: 5000
+    bonusBps: 650
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: GHST
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
     enabled: true
   - protocol: aavev3
     chainId: 137
@@ -1503,6 +1721,27 @@ markets:
     enabled: true
   - protocol: aavev3
     chainId: 137
+    debtAsset: SUSHI
+    collateralAsset: USDC
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: SUSHI
+    collateralAsset: WBTC
+    closeFactorBps: 5000
+    bonusBps: 650
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: SUSHI
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
     debtAsset: USDC
     collateralAsset: AAVE
     closeFactorBps: 5000
@@ -1577,6 +1816,48 @@ markets:
     collateralAsset: wstETH
     closeFactorBps: 5000
     bonusBps: 720
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: USDCn
+    collateralAsset: USDC
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: USDCn
+    collateralAsset: WBTC
+    closeFactorBps: 5000
+    bonusBps: 650
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: USDCn
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: USDT
+    collateralAsset: USDC
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: USDT
+    collateralAsset: WBTC
+    closeFactorBps: 5000
+    bonusBps: 650
+    enabled: true
+  - protocol: aavev3
+    chainId: 137
+    debtAsset: USDT
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
     enabled: true
   - protocol: aavev3
     chainId: 137
@@ -1962,6 +2243,20 @@ markets:
     collateralAsset: WPOL
     closeFactorBps: 5000
     bonusBps: 700
+    enabled: true
+  - protocol: aavev3
+    chainId: 8453
+    debtAsset: AAVE
+    collateralAsset: cbETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 8453
+    debtAsset: AAVE
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 750
     enabled: true
   - protocol: aavev3
     chainId: 8453
@@ -2217,6 +2512,55 @@ markets:
     enabled: true
   - protocol: aavev3
     chainId: 8453
+    debtAsset: ezETH
+    collateralAsset: cbETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 8453
+    debtAsset: ezETH
+    collateralAsset: USDC
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 8453
+    debtAsset: ezETH
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 8453
+    debtAsset: GHO
+    collateralAsset: cbETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 8453
+    debtAsset: GHO
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 8453
+    debtAsset: LBTC
+    collateralAsset: cbETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 8453
+    debtAsset: LBTC
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 8453
     debtAsset: tBTC
     collateralAsset: AAVE
     closeFactorBps: 5000
@@ -2637,6 +2981,27 @@ markets:
     enabled: true
   - protocol: aavev3
     chainId: 8453
+    debtAsset: wrsETH
+    collateralAsset: cbETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 8453
+    debtAsset: wrsETH
+    collateralAsset: USDC
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 8453
+    debtAsset: wrsETH
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 8453
     debtAsset: wstETH
     collateralAsset: AAVE
     closeFactorBps: 5000
@@ -2721,6 +3086,27 @@ markets:
     enabled: true
   - protocol: aavev3
     chainId: 42161
+    debtAsset: AAVE
+    collateralAsset: rsETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: AAVE
+    collateralAsset: WBTC
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: AAVE
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
     debtAsset: ARB
     collateralAsset: AAVE
     closeFactorBps: 5000
@@ -2751,6 +3137,13 @@ markets:
     chainId: 42161
     debtAsset: ARB
     collateralAsset: rETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: ARB
+    collateralAsset: rsETH
     closeFactorBps: 5000
     bonusBps: 750
     enabled: true
@@ -2834,6 +3227,13 @@ markets:
   - protocol: aavev3
     chainId: 42161
     debtAsset: DAI
+    collateralAsset: rsETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: DAI
     collateralAsset: tBTC
     closeFactorBps: 5000
     bonusBps: 750
@@ -2869,6 +3269,132 @@ markets:
   - protocol: aavev3
     chainId: 42161
     debtAsset: DAI
+    collateralAsset: wstETH
+    closeFactorBps: 5000
+    bonusBps: 720
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: EURS
+    collateralAsset: ARB
+    closeFactorBps: 5000
+    bonusBps: 1000
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: EURS
+    collateralAsset: rsETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: EURS
+    collateralAsset: WBTC
+    closeFactorBps: 5000
+    bonusBps: 650
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: EURS
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: EURS
+    collateralAsset: wstETH
+    closeFactorBps: 5000
+    bonusBps: 720
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: ezETH
+    collateralAsset: rsETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: ezETH
+    collateralAsset: WBTC
+    closeFactorBps: 5000
+    bonusBps: 650
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: ezETH
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: FRAX
+    collateralAsset: AAVE
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: FRAX
+    collateralAsset: ARB
+    closeFactorBps: 5000
+    bonusBps: 1000
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: FRAX
+    collateralAsset: ezETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: FRAX
+    collateralAsset: LINK
+    closeFactorBps: 5000
+    bonusBps: 1000
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: FRAX
+    collateralAsset: rETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: FRAX
+    collateralAsset: rsETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: FRAX
+    collateralAsset: WBTC
+    closeFactorBps: 5000
+    bonusBps: 650
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: FRAX
+    collateralAsset: weETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: FRAX
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: FRAX
     collateralAsset: wstETH
     closeFactorBps: 5000
     bonusBps: 720
@@ -2918,6 +3444,13 @@ markets:
   - protocol: aavev3
     chainId: 42161
     debtAsset: GHO
+    collateralAsset: rsETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: GHO
     collateralAsset: tBTC
     closeFactorBps: 5000
     bonusBps: 750
@@ -2989,6 +3522,13 @@ markets:
     chainId: 42161
     debtAsset: LINK
     collateralAsset: rETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: LINK
+    collateralAsset: rsETH
     closeFactorBps: 5000
     bonusBps: 750
     enabled: true
@@ -3079,6 +3619,13 @@ markets:
   - protocol: aavev3
     chainId: 42161
     debtAsset: LUSD
+    collateralAsset: rsETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: LUSD
     collateralAsset: tBTC
     closeFactorBps: 5000
     bonusBps: 750
@@ -3114,6 +3661,34 @@ markets:
   - protocol: aavev3
     chainId: 42161
     debtAsset: LUSD
+    collateralAsset: wstETH
+    closeFactorBps: 5000
+    bonusBps: 720
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: MAI
+    collateralAsset: rsETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: MAI
+    collateralAsset: WBTC
+    closeFactorBps: 5000
+    bonusBps: 650
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: MAI
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: MAI
     collateralAsset: wstETH
     closeFactorBps: 5000
     bonusBps: 720
@@ -3156,6 +3731,13 @@ markets:
   - protocol: aavev3
     chainId: 42161
     debtAsset: rETH
+    collateralAsset: rsETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: rETH
     collateralAsset: tBTC
     closeFactorBps: 5000
     bonusBps: 750
@@ -3194,6 +3776,27 @@ markets:
     collateralAsset: wstETH
     closeFactorBps: 5000
     bonusBps: 720
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: tBTC
+    collateralAsset: rsETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: tBTC
+    collateralAsset: USDC
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: tBTC
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
     enabled: true
   - protocol: aavev3
     chainId: 42161
@@ -3240,6 +3843,13 @@ markets:
   - protocol: aavev3
     chainId: 42161
     debtAsset: USDC
+    collateralAsset: rsETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: USDC
     collateralAsset: tBTC
     closeFactorBps: 5000
     bonusBps: 750
@@ -3268,6 +3878,97 @@ markets:
   - protocol: aavev3
     chainId: 42161
     debtAsset: USDC
+    collateralAsset: wstETH
+    closeFactorBps: 5000
+    bonusBps: 720
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: USDCn
+    collateralAsset: rsETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: USDCn
+    collateralAsset: WBTC
+    closeFactorBps: 5000
+    bonusBps: 650
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: USDCn
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: USDT
+    collateralAsset: AAVE
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: USDT
+    collateralAsset: ARB
+    closeFactorBps: 5000
+    bonusBps: 1000
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: USDT
+    collateralAsset: ezETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: USDT
+    collateralAsset: LINK
+    closeFactorBps: 5000
+    bonusBps: 1000
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: USDT
+    collateralAsset: rETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: USDT
+    collateralAsset: rsETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: USDT
+    collateralAsset: WBTC
+    closeFactorBps: 5000
+    bonusBps: 650
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: USDT
+    collateralAsset: weETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: USDT
+    collateralAsset: WETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: USDT
     collateralAsset: wstETH
     closeFactorBps: 5000
     bonusBps: 720
@@ -3311,6 +4012,13 @@ markets:
     chainId: 42161
     debtAsset: WBTC
     collateralAsset: rETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: WBTC
+    collateralAsset: rsETH
     closeFactorBps: 5000
     bonusBps: 750
     enabled: true
@@ -3388,6 +4096,13 @@ markets:
     chainId: 42161
     debtAsset: weETH
     collateralAsset: rETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: weETH
+    collateralAsset: rsETH
     closeFactorBps: 5000
     bonusBps: 750
     enabled: true
@@ -3465,6 +4180,13 @@ markets:
     chainId: 42161
     debtAsset: WETH
     collateralAsset: rETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: WETH
+    collateralAsset: rsETH
     closeFactorBps: 5000
     bonusBps: 750
     enabled: true
@@ -3542,6 +4264,13 @@ markets:
     chainId: 42161
     debtAsset: wstETH
     collateralAsset: rETH
+    closeFactorBps: 5000
+    bonusBps: 750
+    enabled: true
+  - protocol: aavev3
+    chainId: 42161
+    debtAsset: wstETH
+    collateralAsset: rsETH
     closeFactorBps: 5000
     bonusBps: 750
     enabled: true

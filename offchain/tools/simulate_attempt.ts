@@ -68,8 +68,8 @@ async function main() {
   const debtToken = { ...debtEntry.value, symbol: debtSymbol, amount: debtAmt };
   const collToken = { ...collEntry.value, symbol: collSymbol, amount: collAmt };
 
-  const debtPriceUsd = (await oraclePriceUsd(client, debtEntry.value)) ?? 0;
-  const collPriceUsd = (await oraclePriceUsd(client, collEntry.value)) ?? 0;
+  const debtPriceUsd = (await oraclePriceUsd(client, debtEntry.value, chain)) ?? 0;
+  const collPriceUsd = (await oraclePriceUsd(client, collEntry.value, chain)) ?? 0;
 
   const { options } = buildRouteOptions(cfg, chain, debtEntry.key, collEntry.key);
   const contract = liquidatorForChain(cfg, chain.id);

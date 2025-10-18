@@ -29,6 +29,7 @@ import { getPublicClient } from './infra/rpc_clients';
 import type { ManagedClient } from './infra/rpc_clients';
 import { AdaptiveThresholdsProvider } from './infra/adaptive_thresholds_provider';
 import { defaultProtocolAdapter, getProtocolAdapter } from './protocols/registry';
+import { getMorphoOracleRatio } from './util/morpho_oracle';
 
 const DEFAULT_CLOSE_FACTOR_BPS = 5000;
 const DEFAULT_BONUS_BPS = 800;
@@ -205,6 +206,7 @@ let sessionNotionalUsd = 0;
 let lastFailAlertMs = 0;
 const ALERT_COOLDOWN_MS = 15 * 60 * 1000;
 
+
 // --- Helper Functions ---
 
 async function poolAddress(chain: ChainCfg): Promise<Address> {
@@ -223,6 +225,7 @@ function wadToFloat(value: bigint): number {
 function publicClient(chain: ChainCfg): ManagedClient {
   return getPublicClient(chain);
 }
+
 
 async function inventoryBalance(
   chain: ChainCfg,
@@ -680,11 +683,37 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
       // Try to load oracle prices; if either is missing, attempt a conservative DEX ratio fallback
       let debtPriceUsd = await oraclePriceUsd(client, debtToken);
       let collPriceUsd = await oraclePriceUsd(client, collateralToken);
+      if ((debtPriceUsd == null || collPriceUsd == null) && protocolKey === 'morphoblue' && candidate.morpho) {
+  const ratio = await getMorphoOracleRatio(client, candidate.morpho.marketParams.oracle);
+        if (ratio && Number.isFinite(ratio) && ratio > 0) {
+          if (debtPriceUsd != null && debtPriceUsd > 0 && (collPriceUsd == null || collPriceUsd <= 0)) {
+            collPriceUsd = debtPriceUsd * ratio;
+            agentLog.debug({
+              borrower: candidate.borrower,
+              debt: candidate.debt.symbol,
+              collateral: candidate.collateral.symbol,
+              ratio,
+              inferred: collPriceUsd,
+              oracle: candidate.morpho.marketParams.oracle,
+            }, 'price-fallback-morpho-collateral');
+          } else if (collPriceUsd != null && collPriceUsd > 0 && (debtPriceUsd == null || debtPriceUsd <= 0)) {
+            debtPriceUsd = collPriceUsd / ratio;
+            agentLog.debug({
+              borrower: candidate.borrower,
+              debt: candidate.debt.symbol,
+              collateral: candidate.collateral.symbol,
+              ratio,
+              inferred: debtPriceUsd,
+              oracle: candidate.morpho.marketParams.oracle,
+            }, 'price-fallback-morpho-debt');
+          }
+        }
+      }
       if (debtPriceUsd == null || collPriceUsd == null) {
         const { options: routeOptions, gapFee, gapRouter } = buildRouteOptions(cfg, chain, debtTokenSymbol, collateralTokenSymbol);
         if (routeOptions.length > 0) {
           try {
-            const ratio = await dexPriceRatio({ client, chain, collateral: collateralToken, debt: debtToken, fee: gapFee, router: gapRouter });
+            const ratio = await dexPriceRatio({ client, chain, collateral: collateralToken, debt: debtToken, routeOptions });
             if (ratio && Number.isFinite(ratio) && ratio > 0) {
               if (collPriceUsd == null && debtPriceUsd != null && debtPriceUsd > 0) {
                 collPriceUsd = debtPriceUsd * ratio;
@@ -724,8 +753,7 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
         chain,
         collateral: collateralToken,
         debt: debtToken,
-        fee: gapFee,
-        router: gapRouter,
+        routeOptions,
       });
       const baseHealthFactorMax = chain.risk?.healthFactorMax ?? cfg.risk.healthFactorMax ?? 0.98;
       let baseGapCapBps = policy.gapCapBps ?? 100;
@@ -912,6 +940,8 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
                 },
               }
             : undefined,
+        // Pass pre-liquidation offer if available (enriched by indexer)
+        preliq: (candidate as any).preliq,
       });
       const simulateDurationSeconds = (performance.now() - simulateStart) / 1000;
       histogram.simulateDuration.observe(simulateDurationSeconds);
@@ -1137,6 +1167,9 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
       if (plan.precommit) {
         counter.precommitSuccess.inc({ chain: chain.name });
       }
+      if (plan.preliq?.useBundler) {
+        counter.preLiqAttempt.inc({ chain: chain.name });
+      }
       counter.plansSent.inc({ chain: chain.name });
       if (healthFactor !== null && Number.isFinite(healthFactor) && healthFactor > 0) {
         histogram.candidateHealthFactor.observe({ chain: chain.name, stage: 'sent' }, healthFactor);
@@ -1162,8 +1195,24 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
       }
       if (plan.netUsd > 0) {
         counter.profitEstimated.inc({ chain: chain.name, mode: plan.mode ?? 'flash' }, plan.netUsd);
+        if (plan.preliq?.useBundler) {
+          gauge.preLiqProfitUsd.set(plan.netUsd);
+        }
       }
-      agentLog.info({ borrower: candidate.borrower, netBps: plan.estNetBps, txHash, repayUsd: plan.repayAmount, sessionNotionalUsd, healthFactor, source, trigger, mode: plan.mode, precommit: plan.precommit, pnlPerGas }, 'liquidation-sent');
+      agentLog.info({ 
+        borrower: candidate.borrower, 
+        netBps: plan.estNetBps, 
+        txHash, 
+        repayUsd: plan.repayAmount, 
+        sessionNotionalUsd, 
+        healthFactor, 
+        source, 
+        trigger, 
+        mode: plan.mode, 
+        precommit: plan.precommit, 
+        pnlPerGas,
+        preliq: plan.preliq?.useBundler ? plan.preliq.offerAddress : undefined,
+      }, 'liquidation-sent');
   markActivity();
 
       if (

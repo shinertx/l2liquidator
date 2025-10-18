@@ -64,3 +64,36 @@ export function lookupToken(
   if (bySymbol) return bySymbol;
   return undefined;
 }
+
+const PEGGED_PAIR_KEYS = new Set([
+  'ETH-WSTETH',
+  'WETH-WSTETH',
+  'WSTETH-WETH',
+  'WETH-RETH',
+  'RETH-WETH',
+  'WETH-CBETH',
+  'CBETH-WETH',
+  'WETH-SFRXETH',
+  'SFRXETH-WETH',
+  'WMATIC-MATICX',
+  'MATICX-WMATIC',
+  'WPOL-MATICX',
+  'MATICX-WPOL',
+]);
+
+function normalizePeggedSymbol(symbol?: string | null): string | null {
+  if (!symbol) return null;
+  const normalized = normalizeSymbolKey(symbol);
+  return normalized ? normalized : null;
+}
+
+export function isPeggedPairSymbol(a?: string, b?: string): boolean {
+  const na = normalizePeggedSymbol(a);
+  const nb = normalizePeggedSymbol(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const forward = `${na}-${nb}`;
+  if (PEGGED_PAIR_KEYS.has(forward)) return true;
+  const reverse = `${nb}-${na}`;
+  return PEGGED_PAIR_KEYS.has(reverse);
+}

@@ -37,7 +37,7 @@ Every agent: maximize net USD/hour, capture ≥90% opportunities, revert <2%, in
 # GitHub Copilot Instructions for L2 Micro-Liquidator
 
 ## Project Overview
-This is an L2 Micro-Liquidator for Aave v3 across Arbitrum, Optimism, Base, and Polygon. The system identifies risky loans, executes flash loan liquidations, seizes collateral with protocol bonuses, swaps through DEX venues, repays flash loans, and keeps the spread as profit. Token metadata and policy guardrails are auto-synced via `npm run sync:aave`; avoid manual edits to `config.yaml` and rely on the generator.
+This is an L2 Micro-Liquidator for Aave v3 and Morpho Blue across Arbitrum, Optimism, Base, and Polygon. The system identifies risky loans, executes flash loan liquidations (or pre-liquidations for Morpho), seizes collateral with protocol bonuses, swaps through DEX venues, repays flash loans, and keeps the spread as profit. Token metadata and policy guardrails are auto-synced via `npm run sync:aave` and `npm run sync:morpho`; avoid manual edits to `config.yaml` and rely on the generators.
 
 ## Architecture Components
 
@@ -49,21 +49,24 @@ This is an L2 Micro-Liquidator for Aave v3 across Arbitrum, Optimism, Base, and 
 
 ### Off-chain System (`offchain/`)
 - **`orchestrator.ts`**: Main coordinator that ties all components together
-- **`indexer/`**: Monitors Aave positions and price feeds
-  - `aave_indexer.ts`: Streams liquidation candidates
+- **`indexer/`**: Monitors Aave and Morpho Blue positions and price feeds
+  - `aave_indexer.ts`: Streams Aave v3 liquidation candidates
+  - `morphoblue_indexer.ts`: Streams Morpho Blue candidates with pre-liquidation enrichment
   - `price_watcher.ts`: Tracks oracle vs DEX price gaps
+- **`protocols/`**: Protocol-specific adapters
+  - `morphoblue.ts`: Morpho Blue adapter (unified standard + pre-liquidation)
 - **`executor/`**: Handles transaction building and submission
   - `build_tx.ts`: Constructs liquidation transactions
   - `send_tx.ts`: Submits transactions with MEV protection
   - `mev_protect.ts`: Handles private mempools
 - **`simulator/`**: Pre-execution validation
-  - `simulate.ts`: Validates profitability before execution
+  - `simulate.ts`: Validates profitability before execution (includes pre-liq scoring)
   - `gas.ts`: Gas estimation and optimization
   - `router.ts`: Uniswap routing optimization
 - **`infra/`**: Shared infrastructure
   - `config.ts`: Configuration management with Zod validation
   - `logger.ts`: Pino-based structured logging
-  - `metrics.ts`: Prometheus metrics collection
+  - `metrics.ts`: Prometheus metrics collection (includes pre-liq metrics)
   - `db.ts`: PostgreSQL integration
   - `redis.ts`: Redis for caching and coordination
 
@@ -95,14 +98,31 @@ This is an L2 Micro-Liquidator for Aave v3 across Arbitrum, Optimism, Base, and 
 
 ### Key Concepts to Understand
 
-#### Liquidation Flow
-1. Monitor Aave positions for health factor < 1
+#### Liquidation Flow (Standard)
+1. Monitor Aave/Morpho positions for health factor < 1
 2. Check oracle vs DEX price gaps for profitable opportunities  
 3. Simulate liquidation to ensure profitability
 4. Execute flash loan liquidation
 5. Swap collateral to debt asset via Uniswap V3
 6. Repay flash loan + premium
 7. Keep remaining profit
+
+#### Pre-Liquidation Flow (Morpho Blue)
+1. **Discovery**: Morpho indexer discovers positions with 1.0 < HF ≤ 1.05
+2. **Enrichment**: For each candidate in pre-liq range:
+   - Compute offer address via CREATE2
+   - Check authorization (Morpho.isAuthorized)
+   - Fetch offer parameters (preLCF1/2, preLIF1/2, expiry, oracle)
+   - Linear interpolation for effective CF/LIF based on HF
+3. **Scoring**: Validate offer (expiry, incentive ≥1.5%, CF valid)
+4. **Execution**: If valid → use Bundler3 path, else → standard flash loan
+5. **Fallback**: Seamlessly falls back to standard liquidation if no offer
+
+**Status**: ✅ Integrated & Running (PRELIQ_ENABLED=1)
+- Indexer enrichment: ✅ Complete
+- Scorer validation: ✅ Complete  
+- Metrics tracking: ✅ Complete
+- Bundler3 execution: ⏳ Pending contract deployment
 
 #### Risk Management
 - **Dry Run Mode**: Test mode that logs without executing
@@ -116,6 +136,13 @@ This is an L2 Micro-Liquidator for Aave v3 across Arbitrum, Optimism, Base, and 
 - **Assets**: Token addresses, decimals, Chainlink feeds
 - **Markets**: Debt/collateral asset pairs with risk parameters
 - **Contracts**: Deployed liquidator contract addresses
+
+### Configuration Automation
+- Always sync chain tokens, asset policies, and market enablement via scripts rather than hand-editing `config.yaml`.
+- **Aave v3**: `npm run sync:aave` regenerates chain token maps, markets, and asset policies from on-chain + address-book data.
+- **Morpho Blue**: `npm run sync:morpho` refreshes token metadata; `npm run sync:morpho:markets` updates market entries; `npm run sync:morpho:quick` does a fast tokens refresh during active ops.
+- Add new protocols by extending the relevant `offchain/tools/sync_*.ts` generator—never sprinkle manual edits that the next sync will overwrite.
+- After any sync, inspect the git diff, regenerate bundles (`npm run build`), and rerun preflight or targeted dry runs before deploying.
 
 ### Common Tasks & Patterns
 

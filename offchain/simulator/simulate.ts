@@ -37,6 +37,14 @@ export type SimInput = {
     };
     callbackData?: `0x${string}`;
   };
+  // Pre-liquidation offer (if available)
+  preliq?: {
+    offerAddress: Address;
+    effectiveCloseFactor: number;
+    effectiveLiquidationIncentive: number;
+    oracleAddress: Address;
+    expiry: bigint;
+  };
 };
 
 export type Plan = {
@@ -68,6 +76,11 @@ export type Plan = {
     };
     repayShares: bigint;
     callbackData: `0x${string}`;
+  };
+  // Pre-liquidation execution details (if using Bundler3 path)
+  preliq?: {
+    offerAddress: Address;
+    useBundler: boolean; // true = Bundler3, false = standard flash loan
   };
 };
 
@@ -228,13 +241,58 @@ export async function simulate(input: SimInput): Promise<Plan | null> {
   const debugReasons: DebugReason[] = SIM_DEBUG ? [] : [];
   const protocolKey: ProtocolKey = input.protocol ?? (input.morpho ? 'morphoblue' : 'aavev3');
 
+  // Pre-liquidation scoring: If candidate has preliq offer, validate and potentially use Bundler3
+  let usePreliq = false;
+  let preliqCloseFactor = input.closeFactor;
+  let preliqBonusBps = input.bonusBps;
+
+  if (input.preliq && protocolKey === 'morphoblue') {
+    const { preliq } = input;
+    const now = BigInt(Math.floor(Date.now() / 1000));
+
+    // Validation 1: Check expiry
+    if (preliq.expiry <= now) {
+      if (SIM_DEBUG) debugReasons.push({ stage: 'preliq-expired', expiry: preliq.expiry.toString(), now: now.toString() });
+    }
+    // Validation 2: Check minimum incentive (150 bps = 1.5%)
+    else if (preliq.effectiveLiquidationIncentive < 0.015) {
+      if (SIM_DEBUG) debugReasons.push({ 
+        stage: 'preliq-incentive-low', 
+        incentive: preliq.effectiveLiquidationIncentive 
+      });
+    }
+    // Validation 3: Check effective close factor is reasonable
+    else if (preliq.effectiveCloseFactor <= 0 || preliq.effectiveCloseFactor > 1) {
+      if (SIM_DEBUG) debugReasons.push({ 
+        stage: 'preliq-cf-invalid', 
+        closeFactor: preliq.effectiveCloseFactor 
+      });
+    }
+    // All validations passed - use pre-liq parameters
+    else {
+      usePreliq = true;
+      preliqCloseFactor = preliq.effectiveCloseFactor;
+      preliqBonusBps = Math.floor(preliq.effectiveLiquidationIncentive * 10_000);
+      if (SIM_DEBUG) debugReasons.push({ 
+        stage: 'preliq-accepted', 
+        offer: preliq.offerAddress,
+        cf: preliqCloseFactor,
+        bonusBps: preliqBonusBps
+      });
+    }
+  }
+
+  // Use pre-liq parameters if available, otherwise use standard
+  const closeFactor = usePreliq ? preliqCloseFactor : input.closeFactor;
+  const bonusBps = usePreliq ? preliqBonusBps : input.bonusBps;
+
   if (input.pricesUsd.debt <= 0 || input.pricesUsd.coll <= 0) {
     if (SIM_DEBUG) debugReasons.push({ stage: 'price-invalid', detail: input.pricesUsd });
     if (SIM_DEBUG) console.debug('simulate: abort', debugReasons);
     return null;
   }
 
-  const cfBps = Math.floor(input.closeFactor * 10_000);
+  const cfBps = Math.floor(closeFactor * 10_000);
   if (cfBps <= 0) {
     if (SIM_DEBUG) debugReasons.push({ stage: 'close-factor-nonpositive', detail: cfBps });
     if (SIM_DEBUG) console.debug('simulate: abort', debugReasons);
@@ -282,7 +340,7 @@ export async function simulate(input: SimInput): Promise<Plan | null> {
     }
   }
 
-  const bonusFactor = 1 + input.bonusBps / 10_000;
+  const bonusFactor = 1 + bonusBps / 10_000;
   const seizeUsd = repayUsd * bonusFactor;
   if (seizeUsd <= 0) {
     if (SIM_DEBUG) debugReasons.push({ stage: 'seize-usd-nonpositive', detail: seizeUsd });
@@ -491,6 +549,10 @@ export async function simulate(input: SimInput): Promise<Plan | null> {
     netUsd: best.netUsd,
     minProfit,
     morpho: morphoPlan,
+    preliq: usePreliq && input.preliq ? {
+      offerAddress: input.preliq.offerAddress,
+      useBundler: true,
+    } : undefined,
   };
 }
 

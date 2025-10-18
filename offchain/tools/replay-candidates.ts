@@ -101,8 +101,8 @@ async function main() {
       continue;
     }
 
-    const debtPriceUsd = (await oraclePriceUsd(client, debtToken)) ?? 1;
-    const collPriceUsd = (await oraclePriceUsd(client, collateralToken)) ?? debtPriceUsd;
+    const debtPriceUsd = (await oraclePriceUsd(client, debtToken, chain)) ?? 1;
+    const collPriceUsd = (await oraclePriceUsd(client, collateralToken, chain)) ?? debtPriceUsd;
     const contract = liquidatorForChain(cfg, chain.id);
     if (!contract) {
       console.warn('Missing liquidator address for chain', chain.id);
@@ -122,7 +122,7 @@ async function main() {
     const nativeToken = chain.tokens.WETH ?? chain.tokens.ETH ?? debtToken;
     let nativePriceUsd = debtPriceUsd;
     if (nativeToken) {
-      const maybeNative = await oraclePriceUsd(client, nativeToken);
+      const maybeNative = await oraclePriceUsd(client, nativeToken, chain);
       if (maybeNative && maybeNative > 0) {
         nativePriceUsd = maybeNative;
       }
