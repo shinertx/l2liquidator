@@ -37,4 +37,14 @@ library SafeERC20 {
         );
         require(success && (data.length == 0 || abi.decode(data, (bool))), "SafeERC20: APPROVE_FAILED");
     }
+
+    function safeIncreaseAllowance(
+        IERC20 token,
+        address spender,
+        uint256 addedValue
+    ) internal {
+        uint256 currentAllowance = token.allowance(address(this), spender);
+        safeApprove(token, spender, 0);
+        safeApprove(token, spender, currentAllowance + addedValue);
+    }
 }

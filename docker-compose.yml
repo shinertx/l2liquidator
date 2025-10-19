@@ -27,8 +27,6 @@ services:
       REDIS_URL: "redis://redis:6380"
     command: ["/app/entrypoint.sh"]
     depends_on: [db, redis]
-    ports:
-      - "9464:9464"
     volumes:
       - ./.env:/app/.env:ro
       - ./config.yaml:/app/config.yaml:ro

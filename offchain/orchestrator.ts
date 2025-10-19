@@ -1,6 +1,6 @@
 import './infra/env';
 import './infra/metrics_server';
-import { Address } from 'viem';
+import { Address, type Hex } from 'viem';
 import { performance } from 'perf_hooks';
 import { loadConfig, liquidatorForChain, ChainCfg, AppConfig, TokenInfo, ProtocolKey } from './infra/config';
 import { executorAddressForChain, privateKeyForChain } from './infra/accounts';
@@ -13,6 +13,7 @@ import { type Candidate, requestIndexerBoost, fetchBorrowerCandidates, type Aave
 import { oracleDexGapBps, oraclePriceUsd, dexPriceRatio } from './indexer/price_watcher';
 import type { SimPlan } from './protocols/types';
 import { sendLiquidation } from './executor/send_tx';
+import { executePreLiquidation } from './executor/preliq_executor';
 import type { BuildArgs } from './executor/build_tx';
 import { getPoolFromProvider, logPoolsAtBoot } from './infra/aave_provider';
 import { buildRouteOptions } from './util/routes';
@@ -1104,60 +1105,86 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
       }
 
       const sendStart = performance.now();
-  let buildArgs: BuildArgs;
-      if (plan.protocol === 'morphoblue') {
-        if (!plan.morpho) {
-          agentLog.error({ borrower: candidate.borrower, source }, 'morpho-plan-missing');
-          await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason: 'morpho-plan-missing' });
-          recordCandidateDrop(chain.name, 'morpho_plan_missing');
-          return;
-        }
-        buildArgs = {
-          protocol: 'morphoblue',
-          borrower: candidate.borrower,
-          repayAmount: plan.repayAmount,
-          repayShares: plan.morpho.repayShares,
-          dexId: plan.dexId,
-          router: plan.router,
-          uniFee: plan.uniFee,
-          solidlyStable: plan.solidlyStable,
-          solidlyFactory: plan.solidlyFactory,
-          minProfit,
-          amountOutMin: plan.amountOutMin,
-          deadline,
-          path: plan.path,
-          market: plan.morpho.market,
-          callbackData: plan.morpho.callbackData,
-          mode: plan.mode,
-        };
-      } else {
-        buildArgs = {
-          protocol: plan.protocol,
-          borrower: candidate.borrower,
-          debtAsset: candidate.debt.address,
-          collateralAsset: candidate.collateral.address,
-          repayAmount: plan.repayAmount,
-          dexId: plan.dexId,
-          router: plan.router,
-          uniFee: plan.uniFee,
-          solidlyStable: plan.solidlyStable,
-          solidlyFactory: plan.solidlyFactory,
-          minProfit,
-          amountOutMin: plan.amountOutMin,
-          deadline,
-          path: plan.path,
-          mode: plan.mode,
-        };
-      }
+      let txHash: Hex;
 
-      const txHash = await sendLiquidation(
-        chain.id,
-        chain.rpc,
-        pk,
-        contract,
-        buildArgs,
-        chain.privtx,
-      );
+      if (plan.preliq?.useBundler) {
+        counter.preLiqAttempt.inc({ chain: chain.name });
+        if (!candidate.preliq) {
+          counter.preLiqFailed.inc({ chain: chain.name });
+          throw new Error('preliq-offer-missing');
+        }
+        const preliqResult = await executePreLiquidation({
+          cfg,
+          chain,
+          candidate: candidate as typeof candidate & { preliq: NonNullable<typeof candidate.preliq> },
+          plan,
+          beneficiary: cfg.beneficiary,
+          pk,
+          privateRpc: chain.privtx,
+        });
+        if (!preliqResult.success || !preliqResult.txHash) {
+          counter.preLiqFailed.inc({ chain: chain.name });
+          const reason = preliqResult.error ?? 'preliq-send-failed';
+          throw new Error(reason);
+        }
+        txHash = preliqResult.txHash;
+        counter.preLiqSuccess.inc({ chain: chain.name });
+      } else {
+        let buildArgs: BuildArgs;
+        if (plan.protocol === 'morphoblue') {
+          if (!plan.morpho) {
+            agentLog.error({ borrower: candidate.borrower, source }, 'morpho-plan-missing');
+            await recordAttemptRow({ chainId: chain.id, borrower: candidate.borrower, status: 'policy_skip', reason: 'morpho-plan-missing' });
+            recordCandidateDrop(chain.name, 'morpho_plan_missing');
+            return;
+          }
+          buildArgs = {
+            protocol: 'morphoblue',
+            borrower: candidate.borrower,
+            repayAmount: plan.repayAmount,
+            repayShares: plan.morpho.repayShares,
+            dexId: plan.dexId,
+            router: plan.router,
+            uniFee: plan.uniFee,
+            solidlyStable: plan.solidlyStable,
+            solidlyFactory: plan.solidlyFactory,
+            minProfit,
+            amountOutMin: plan.amountOutMin,
+            deadline,
+            path: plan.path,
+            market: plan.morpho.market,
+            callbackData: plan.morpho.callbackData,
+            mode: plan.mode,
+          };
+        } else {
+          buildArgs = {
+            protocol: plan.protocol,
+            borrower: candidate.borrower,
+            debtAsset: candidate.debt.address,
+            collateralAsset: candidate.collateral.address,
+            repayAmount: plan.repayAmount,
+            dexId: plan.dexId,
+            router: plan.router,
+            uniFee: plan.uniFee,
+            solidlyStable: plan.solidlyStable,
+            solidlyFactory: plan.solidlyFactory,
+            minProfit,
+            amountOutMin: plan.amountOutMin,
+            deadline,
+            path: plan.path,
+            mode: plan.mode,
+          };
+        }
+
+        txHash = await sendLiquidation(
+          chain.id,
+          chain.rpc,
+          pk,
+          contract,
+          buildArgs,
+          chain.privtx,
+        );
+      }
       const sendLatencySeconds = (performance.now() - sendStart) / 1000;
       histogram.sendLatency.observe(sendLatencySeconds);
       if (plan.mode === 'funds') {
@@ -1166,9 +1193,6 @@ async function runChainAgent(chain: ChainCfg, cfg: AppConfig) {
       }
       if (plan.precommit) {
         counter.precommitSuccess.inc({ chain: chain.name });
-      }
-      if (plan.preliq?.useBundler) {
-        counter.preLiqAttempt.inc({ chain: chain.name });
       }
       counter.plansSent.inc({ chain: chain.name });
       if (healthFactor !== null && Number.isFinite(healthFactor) && healthFactor > 0) {

@@ -1,8 +1,10 @@
-import type { AppConfig, ChainCfg } from '../infra/config';
+import { AppConfig, ChainCfg, preliqChainConfig, preliqEnabled, preliqConfig } from '../infra/config';
 import type { Candidate } from './aave_indexer';
 import { getPublicClient, type ManagedClient } from '../infra/rpc_clients';
 import { parseAbiItem, type Address, type Hash, encodeAbiParameters, keccak256, getCreate2Address } from 'viem';
 import { base, arbitrum, optimism } from 'viem/chains';
+import { log } from '../infra/logger';
+import { redis } from '../infra/redis';
 
 const DEFAULT_ENDPOINT =
   process.env.MORPHO_BLUE_GRAPHQL_ENDPOINT?.trim() ??
@@ -10,29 +12,68 @@ const DEFAULT_ENDPOINT =
 const DEFAULT_MAX_COMPLEXITY = Number(process.env.MORPHO_BLUE_MAX_COMPLEXITY ?? 1000);
 const DEFAULT_LIMIT = Number(process.env.MORPHO_BLUE_FIRST ?? 500);
 const DEFAULT_HF_THRESHOLD = Number(process.env.MORPHO_BLUE_HF_THRESHOLD ?? 1.05);
-const BASE_POLL_DELAY_MS = Number(process.env.MORPHO_BLUE_POLL_DELAY_MS ?? 5_000);
-const MIN_POLL_DELAY_MS = Math.max(1_000, Number(process.env.MORPHO_BLUE_MIN_POLL_DELAY_MS ?? 5_000));
-const MAX_POLL_DELAY_MS = Math.max(MIN_POLL_DELAY_MS, Number(process.env.MORPHO_BLUE_MAX_POLL_DELAY_MS ?? BASE_POLL_DELAY_MS));
-const BACKOFF_MULTIPLIER = Math.max(1, Number(process.env.MORPHO_BLUE_BACKOFF_MULTIPLIER ?? 2));
-const SUCCESS_DELAY_MS = Math.max(MIN_POLL_DELAY_MS, Number(process.env.MORPHO_BLUE_SUCCESS_DELAY_MS ?? MIN_POLL_DELAY_MS));
+const DEFAULT_POLL_DELAY_MS = Number(process.env.MORPHO_BLUE_POLL_DELAY_MS ?? 5_000);
+const DEFAULT_MIN_POLL_DELAY_MS = Math.max(1_000, Number(process.env.MORPHO_BLUE_MIN_POLL_DELAY_MS ?? 1_000));
+const DEFAULT_MAX_POLL_DELAY_MS = Math.max(
+  DEFAULT_MIN_POLL_DELAY_MS,
+  Number(process.env.MORPHO_BLUE_MAX_POLL_DELAY_MS ?? 30_000)
+);
+const DEFAULT_BACKOFF_MULTIPLIER = Math.max(1, Number(process.env.MORPHO_BLUE_BACKOFF_MULTIPLIER ?? 2));
+const DEFAULT_SUCCESS_DELAY_MS = Math.max(
+  DEFAULT_MIN_POLL_DELAY_MS,
+  Number(process.env.MORPHO_BLUE_SUCCESS_DELAY_MS ?? 5_000)
+);
 const WAIT_FLOOR_MS = Math.max(50, Number(process.env.MORPHO_BLUE_WAIT_FLOOR_MS ?? 100));
-const parsedChainIds = (process.env.MORPHO_BLUE_CHAIN_IDS ?? '1')
-  .split(',')
-  .map((value) => Number(value.trim()))
-  .filter((value) => Number.isFinite(value) && value > 0);
-const SUPPORTED_CHAIN_IDS = parsedChainIds.length > 0 ? parsedChainIds : [1];
+const DEFAULT_DEDUPE_MS = Number(process.env.MORPHO_BLUE_DEDUPE_MS ?? 60_000);
 
-// Pre-liquidation feature flags and configuration
-const PRELIQ_ENABLED = process.env.PRELIQ_ENABLED === '1';
 const MORPHO_BLUE = '0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb' as Address;
-const PRELIQ_FACTORY = {
-  [base.id]: '0x0000000000000000000000000000000000000000' as Address,
-  [arbitrum.id]: '0x0000000000000000000000000000000000000000' as Address,
-  [optimism.id]: '0x0000000000000000000000000000000000000000' as Address,
-} as const;
+const DEFAULT_PRELIQ_CACHE_MS = Number(process.env.MORPHO_PRELIQ_CACHE_MS ?? 60_000);
+type ChainPollingConfig = {
+  baseInterval: number;
+  minInterval: number;
+  maxInterval: number;
+  successInterval: number;
+};
 
-function isSupportedChain(chainId: number): boolean {
-  return SUPPORTED_CHAIN_IDS.includes(chainId);
+function resolveChainPollingConfig(cfg: AppConfig, chainId: number): ChainPollingConfig {
+  const root = preliqConfig(cfg);
+  const chainCfg = preliqChainConfig(cfg, chainId);
+  const desiredInterval = chainCfg?.pollIntervalMs ?? root?.pollIntervalMs;
+  const baseInterval = Math.max(DEFAULT_MIN_POLL_DELAY_MS, desiredInterval ?? DEFAULT_POLL_DELAY_MS);
+  const minInterval = Math.max(DEFAULT_MIN_POLL_DELAY_MS, desiredInterval ?? baseInterval);
+  const successInterval = Math.max(
+    DEFAULT_MIN_POLL_DELAY_MS,
+    chainCfg?.pollIntervalMs ?? root?.pollIntervalMs ?? DEFAULT_SUCCESS_DELAY_MS
+  );
+  const configuredMax = chainCfg?.pollIntervalMs ?? root?.pollIntervalMs;
+  const maxInterval = Math.max(
+    baseInterval,
+    configuredMax ? Math.max(baseInterval, configuredMax * 4) : DEFAULT_MAX_POLL_DELAY_MS
+  );
+  return { baseInterval, minInterval, maxInterval, successInterval };
+}
+
+function resolveChainHfThreshold(cfg: AppConfig, chainId: number): number {
+  const root = preliqConfig(cfg);
+  const chainCfg = preliqChainConfig(cfg, chainId);
+  const threshold = chainCfg?.maxHealthFactor ?? root?.maxHealthFactor ?? DEFAULT_HF_THRESHOLD;
+  return Math.max(1.0, threshold);
+}
+
+function resolveDedupeWindow(cfg: AppConfig): number {
+  const root = preliqConfig(cfg);
+  if (root?.cacheTtlMs && root.cacheTtlMs > 0) {
+    return root.cacheTtlMs;
+  }
+  if (cfg.indexer?.dedupeMs && cfg.indexer.dedupeMs > 0) {
+    return cfg.indexer.dedupeMs;
+  }
+  return DEFAULT_DEDUPE_MS;
+}
+
+function resolveFetchLimit(cfg: AppConfig): number {
+  const configured = cfg.indexer?.subgraphFirst ?? DEFAULT_LIMIT;
+  return Math.max(1, Math.min(2000, configured));
 }
 
 function getViemChain(chainId: number) {
@@ -155,17 +196,19 @@ type PreLiqOffer = {
   expiry: bigint;
 };
 
+const offerParamCache = new Map<string, { value: Omit<PreLiqOffer, 'offerAddress'>; expiresAt: number }>();
+const REDIS_CACHE_PREFIX = 'preliq:offer_params:';
+
 /**
  * Compute CREATE2 address for a pre-liquidation offer
  * Address = CREATE2(factory, keccak256(borrower, marketId), initCodeHash)
  */
-function computeOfferAddress(chainId: number, borrower: Address, marketId: Hash): Address {
-  const factory = PRELIQ_FACTORY[chainId as keyof typeof PRELIQ_FACTORY];
-  if (!factory || factory === '0x0000000000000000000000000000000000000000') {
+function computeOfferAddress(cfg: AppConfig, chainId: number, borrower: Address, marketId: Hash): Address {
+  const chainCfg = preliqChainConfig(cfg, chainId);
+  if (!chainCfg?.factory || !chainCfg.initCodeHash) {
     return '0x0000000000000000000000000000000000000000';
   }
 
-  // salt = keccak256(abi.encode(borrower, marketId))
   const salt = keccak256(
     encodeAbiParameters(
       [{ type: 'address' }, { type: 'bytes32' }],
@@ -173,10 +216,7 @@ function computeOfferAddress(chainId: number, borrower: Address, marketId: Hash)
     )
   );
 
-  // TODO: Replace this placeholder with actual initCodeHash after contract deployment
-  const initCodeHash = '0x0000000000000000000000000000000000000000000000000000000000000000' as Hash;
-
-  return getCreate2Address({ from: factory, salt, bytecodeHash: initCodeHash });
+  return getCreate2Address({ from: chainCfg.factory, salt, bytecodeHash: chainCfg.initCodeHash as Hash });
 }
 
 /**
@@ -185,13 +225,16 @@ function computeOfferAddress(chainId: number, borrower: Address, marketId: Hash)
 async function checkOfferAuthorization(
   client: ManagedClient,
   borrower: Address,
-  offerAddress: Address
+  offerAddress: Address,
+  morphoAddress?: Address
 ): Promise<boolean> {
   if (offerAddress === '0x0000000000000000000000000000000000000000') return false;
 
+  const targetMorpho = morphoAddress ?? MORPHO_BLUE;
+
   try {
     const authorized = await client.readContract({
-      address: MORPHO_BLUE,
+      address: targetMorpho,
       abi: [{
         type: 'function',
         name: 'isAuthorized',
@@ -206,7 +249,8 @@ async function checkOfferAuthorization(
       args: [borrower, offerAddress],
     }) as boolean;
     return authorized;
-  } catch {
+  } catch (err) {
+    log.debug({ borrower, offer: offerAddress, err: (err as Error).message }, 'preliq-authorization-check-failed');
     return false;
   }
 }
@@ -217,10 +261,37 @@ async function checkOfferAuthorization(
  */
 async function fetchOfferParams(
   client: ManagedClient,
+  chainId: number,
   offerAddress: Address,
-  healthFactor: number
+  healthFactor: number,
+  cacheMs: number
 ): Promise<Omit<PreLiqOffer, 'offerAddress'> | null> {
   if (offerAddress === '0x0000000000000000000000000000000000000000') return null;
+
+  const cacheKey = `${chainId}:${offerAddress.toLowerCase()}`;
+  const cached = offerParamCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
+  if (redis) {
+    try {
+      const raw = await redis.get(`${REDIS_CACHE_PREFIX}${cacheKey}`);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { effectiveCloseFactor: number; effectiveLiquidationIncentive: number; oracleAddress: Address; expiry: string };
+        const value = {
+          effectiveCloseFactor: parsed.effectiveCloseFactor,
+          effectiveLiquidationIncentive: parsed.effectiveLiquidationIncentive,
+          oracleAddress: parsed.oracleAddress,
+          expiry: BigInt(parsed.expiry),
+        } satisfies Omit<PreLiqOffer, 'offerAddress'>;
+        offerParamCache.set(cacheKey, { value, expiresAt: Date.now() + Math.max(1_000, cacheMs) });
+        return value;
+      }
+    } catch (err) {
+      log.debug({ err: (err as Error).message, cacheKey }, 'preliq-offer-redis-cache-miss');
+    }
+  }
 
   try {
     // Parallel reads for all offer parameters
@@ -270,13 +341,29 @@ async function fetchOfferParams(
     const effectiveCloseFactor = Number(preLCF1) + t * (Number(preLCF2) - Number(preLCF1));
     const effectiveLiquidationIncentive = Number(preLIF1) + t * (Number(preLIF2) - Number(preLIF1));
 
-    return {
+    const value = {
       effectiveCloseFactor: effectiveCloseFactor / 1e18,
       effectiveLiquidationIncentive: effectiveLiquidationIncentive / 1e18,
       oracleAddress: oracle,
       expiry,
     };
-  } catch {
+    offerParamCache.set(cacheKey, { value, expiresAt: Date.now() + Math.max(1_000, cacheMs) });
+    if (redis) {
+      void redis.set(
+        `${REDIS_CACHE_PREFIX}${cacheKey}`,
+        JSON.stringify({
+          effectiveCloseFactor: value.effectiveCloseFactor,
+          effectiveLiquidationIncentive: value.effectiveLiquidationIncentive,
+          oracleAddress: value.oracleAddress,
+          expiry: value.expiry.toString(),
+        }),
+        'PX',
+        Math.max(1_000, cacheMs),
+      ).catch((err) => log.debug({ err: err instanceof Error ? err.message : String(err) }, 'preliq-offer-redis-cache-set-failed'));
+    }
+    return value;
+  } catch (err) {
+    log.debug({ chainId, offer: offerAddress, err: (err as Error).message }, 'preliq-offer-params-failed');
     return null;
   }
 }
@@ -286,31 +373,43 @@ async function fetchOfferParams(
  * Called when 1.0 < HF <= 1.05 to check for offers
  */
 async function enrichWithPreLiqOffer(
+  cfg: AppConfig,
   candidate: Candidate,
   chain: ChainCfg
 ): Promise<Candidate> {
-  if (!PRELIQ_ENABLED) return candidate;
+  if (!preliqEnabled(cfg, chain.id)) return candidate;
   if (!candidate.morpho) return candidate;
 
+  const chainPreliq = preliqChainConfig(cfg, chain.id);
+  if (!chainPreliq) return candidate;
+  const maxHf = chainPreliq?.maxHealthFactor ?? cfg.preliq?.maxHealthFactor ?? 1.05;
+
   const { healthFactor } = candidate;
-  if (!healthFactor || healthFactor >= 1.05 || healthFactor < 1.0) return candidate;
+  if (!healthFactor || healthFactor >= maxHf || healthFactor <= 1.0) return candidate;
 
   const client = getPublicClient(chain);
 
   // Compute offer address via CREATE2
   const marketId = candidate.morpho.uniqueKey as Hash;
-  const offerAddress = computeOfferAddress(chain.id, candidate.borrower, marketId);
+  const offerAddress = computeOfferAddress(cfg, chain.id, candidate.borrower, marketId);
 
   if (offerAddress === '0x0000000000000000000000000000000000000000') {
     return candidate;
   }
 
   // Check authorization
-  const authorized = await checkOfferAuthorization(client, candidate.borrower, offerAddress);
+  const authorized = await checkOfferAuthorization(
+    client,
+    candidate.borrower,
+    offerAddress,
+    chainPreliq?.morpho as Address | undefined
+  );
   if (!authorized) return candidate;
 
+  const cacheMs = chainPreliq?.cacheTtlMs ?? cfg.preliq?.cacheTtlMs ?? DEFAULT_PRELIQ_CACHE_MS;
+
   // Fetch offer parameters
-  const offerParams = await fetchOfferParams(client, offerAddress, healthFactor);
+  const offerParams = await fetchOfferParams(client, chain.id, offerAddress, healthFactor, cacheMs);
   if (!offerParams) return candidate;
 
   // Check expiry
@@ -330,6 +429,7 @@ async function enrichWithPreLiqOffer(
 // --- End Pre-Liquidation Enrichment ---
 
 async function fetchMorphoPositions(
+  cfg: AppConfig,
   chain: ChainCfg,
   limit: number,
   hfThreshold: number,
@@ -394,9 +494,9 @@ async function fetchMorphoPositions(
       .filter((candidate): candidate is Candidate => candidate !== null);
 
     // Enrich with pre-liq offers if enabled (parallel enrichment for performance)
-    if (PRELIQ_ENABLED) {
+    if (preliqEnabled(cfg, chain.id)) {
       const enrichedCandidates = await Promise.all(
-        baseCandidates.map((candidate) => enrichWithPreLiqOffer(candidate, chain))
+        baseCandidates.map((candidate) => enrichWithPreLiqOffer(cfg, candidate, chain))
       );
       return { items: enrichedCandidates };
     }
@@ -410,30 +510,34 @@ async function fetchMorphoPositions(
 export async function pollMorphoBlueCandidatesOnce(
   cfg: AppConfig,
   chain: ChainCfg,
-  first = DEFAULT_LIMIT,
-  hfThreshold = DEFAULT_HF_THRESHOLD,
+  first?: number,
+  hfThreshold?: number,
 ): Promise<{ candidates: Candidate[]; notes?: string }> {
   if (!chain.enabled) return { candidates: [] };
-  if (!isSupportedChain(chain.id)) return { candidates: [], notes: 'morpho-unsupported-chain' };
+  if (!preliqEnabled(cfg, chain.id)) return { candidates: [], notes: 'preliq-disabled' };
 
-  const { items, notes } = await fetchMorphoPositions(chain, first, hfThreshold);
+  const limit = Math.max(1, Math.min(2000, first ?? resolveFetchLimit(cfg)));
+  const threshold = hfThreshold ?? resolveChainHfThreshold(cfg, chain.id);
+
+  const { items, notes } = await fetchMorphoPositions(cfg, chain, limit, threshold);
   return { candidates: items, notes };
 }
 
 export async function* streamMorphoBlueCandidates(cfg: AppConfig): AsyncGenerator<Candidate> {
-  const chains = cfg.chains.filter((c) => c.enabled && isSupportedChain(c.id));
+  const chains = cfg.chains.filter((c) => c.enabled && preliqEnabled(cfg, c.id));
   if (chains.length === 0) return;
 
   const dedupe = new Map<string, number>();
-  const dedupeWindowMs = Number(process.env.MORPHO_BLUE_DEDUPE_MS ?? 60_000);
-  const limit = Number(process.env.MORPHO_BLUE_STREAM_FIRST ?? DEFAULT_LIMIT);
-  const hfThreshold = Number(process.env.MORPHO_BLUE_STREAM_HF ?? DEFAULT_HF_THRESHOLD);
-const baseInterval = Math.max(MIN_POLL_DELAY_MS, BASE_POLL_DELAY_MS);
+  const dedupeWindowMs = resolveDedupeWindow(cfg);
+  const limit = resolveFetchLimit(cfg);
   const schedule = new Map<number, { next: number; interval: number }>();
+  const pollingConfig = new Map<number, ChainPollingConfig>();
   const boot = Date.now();
 
   for (const chain of chains) {
-    schedule.set(chain.id, { next: boot, interval: baseInterval });
+    const params = resolveChainPollingConfig(cfg, chain.id);
+    pollingConfig.set(chain.id, params);
+    schedule.set(chain.id, { next: boot, interval: params.baseInterval });
   }
 
   while (true) {
@@ -441,13 +545,15 @@ const baseInterval = Math.max(MIN_POLL_DELAY_MS, BASE_POLL_DELAY_MS);
     let dispatched = false;
 
     for (const chain of chains) {
-      const current = schedule.get(chain.id) ?? { next: loopStart, interval: baseInterval };
+      const params = pollingConfig.get(chain.id) ?? resolveChainPollingConfig(cfg, chain.id);
+      const current = schedule.get(chain.id) ?? { next: loopStart, interval: params.baseInterval };
       if (loopStart < current.next) {
         schedule.set(chain.id, current);
         continue;
       }
 
       dispatched = true;
+      const hfThreshold = resolveChainHfThreshold(cfg, chain.id);
       const { candidates } = await pollMorphoBlueCandidatesOnce(cfg, chain, limit, hfThreshold);
       const processedAt = Date.now();
       let yielded = 0;
@@ -462,12 +568,12 @@ const baseInterval = Math.max(MIN_POLL_DELAY_MS, BASE_POLL_DELAY_MS);
       }
 
       if (yielded > 0) {
-        schedule.set(chain.id, { next: processedAt + SUCCESS_DELAY_MS, interval: SUCCESS_DELAY_MS });
+        schedule.set(chain.id, { next: processedAt + params.successInterval, interval: params.successInterval });
       } else {
-        const previous = Math.max(MIN_POLL_DELAY_MS, current.interval);
+        const previous = Math.max(params.minInterval, current.interval);
         const grown = Math.min(
-          MAX_POLL_DELAY_MS,
-          Math.max(MIN_POLL_DELAY_MS, Math.floor(previous * BACKOFF_MULTIPLIER))
+          params.maxInterval,
+          Math.max(params.minInterval, Math.floor(previous * DEFAULT_BACKOFF_MULTIPLIER))
         );
         schedule.set(chain.id, { next: processedAt + grown, interval: grown });
       }
@@ -479,7 +585,7 @@ const baseInterval = Math.max(MIN_POLL_DELAY_MS, BASE_POLL_DELAY_MS);
       const nowTs = Date.now();
       const waitMs = Number.isFinite(nextReady)
         ? Math.max(WAIT_FLOOR_MS, nextReady - nowTs)
-        : Math.max(WAIT_FLOOR_MS, baseInterval);
+        : Math.max(WAIT_FLOOR_MS, DEFAULT_POLL_DELAY_MS);
       await sleep(waitMs);
     }
   }

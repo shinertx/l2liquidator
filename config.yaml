@@ -16,7 +16,7 @@ chains:
     aaveProvider: "0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9e"
     uniV3Router: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
     quoter: "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6"
-    enabled: false
+    enabled: true
     tokens:
       DAI:
         address: "0x6B175474E89094C44Da98b954EedeAC495271d0F"
@@ -2547,6 +2547,27 @@ markets:
     enabled: true
   - protocol: aavev3
     chainId: 8453
+    debtAsset: GHO
+    collateralAsset: USDC
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 8453
+    debtAsset: GHO
+    collateralAsset: cbBTC
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 8453
+    debtAsset: GHO
+    collateralAsset: wstETH
+    closeFactorBps: 5000
+    bonusBps: 500
+    enabled: true
+  - protocol: aavev3
+    chainId: 8453
     debtAsset: LBTC
     collateralAsset: cbETH
     closeFactorBps: 5000
@@ -4424,3 +4445,51 @@ dexRouters:
     tokens:
       USDC: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
       WETH: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+
+preliq:
+  enabled: true
+  pollIntervalMs: 10000
+  lookbackBlocks: 1000
+  maxHealthFactor: 1.05
+  cacheTtlMs: 60000
+  minIncentiveBps: 150
+  minLiquidityScore: 50
+  maxOracleDivergenceBps: 200
+  minNetProfitUsd: 2
+  aggregator:
+    primary: odos
+    slippageBps: 40
+  chains:
+    "42161":
+      enabled: true
+      factory: ${PRELIQ_FACTORY_ARB}
+      initCodeHash: ${PRELIQ_INIT_CODE_HASH}
+      bundler: "0x23055618898e202386e6c13955a58D3C68200BFB"
+      morpho: "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb"
+      odosRouter: "0xa669e7A0d4b3e4Fa48af2dE86BD4CD7126Be4e13"
+      oneInchRouter: "0x1111111254EEB25477B68fb85Ed929f73A960582"
+      pollIntervalMs: 5000
+      lookbackBlocks: 600
+      cacheTtlMs: 90000
+    "10":
+      enabled: true
+      factory: ${PRELIQ_FACTORY_OP}
+      initCodeHash: ${PRELIQ_INIT_CODE_HASH}
+      bundler: "0x23055618898e202386e6c13955a58D3C68200BFB"
+      morpho: "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb"
+      odosRouter: "0xCa423977156BB05b13A2BA3b76Bc5419E2fE9680"
+      oneInchRouter: "0x1111111254EEB25477B68fb85Ed929f73A960582"
+      pollIntervalMs: 5000
+      lookbackBlocks: 600
+      cacheTtlMs: 90000
+    "8453":
+      enabled: true
+      factory: ${PRELIQ_FACTORY_BASE}
+      initCodeHash: ${PRELIQ_INIT_CODE_HASH}
+      bundler: "0x23055618898e202386e6c13955a58D3C68200BFB"
+      morpho: "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb"
+      odosRouter: "0x19cEeAd7105607Cd444F5ad10dd51356436095a1"
+      oneInchRouter: "0x1111111254EEB25477B68fb85Ed929f73A960582"
+      pollIntervalMs: 5000
+      lookbackBlocks: 600
+      cacheTtlMs: 90000

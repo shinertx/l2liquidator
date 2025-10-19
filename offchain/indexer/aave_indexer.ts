@@ -25,6 +25,13 @@ export type Candidate = {
       lltv: bigint;
     };
   };
+  preliq?: {
+    offerAddress: `0x${string}`;
+    effectiveCloseFactor: number;
+    effectiveLiquidationIncentive: number;
+    oracleAddress: `0x${string}`;
+    expiry: bigint;
+  };
 };
 
 export const SUBGRAPH_ENV_KEYS: Record<number, string> = {

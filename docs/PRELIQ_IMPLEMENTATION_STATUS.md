@@ -10,36 +10,53 @@
 
 ### TODO Items for Production:
 
+> **2025-10-18 progress note (alpha wiring)**
+> - Added configuration schema + example entries (`preliq` section) and runtime validation helpers.
+> - Morpho candidate enrichment now reads factory/init code hash/bundler routing from config, with offer-param caching and better authorization logging.
+> - Indexer polling, HF thresholds, and cache TTLs are all sourced from the `preliq.chains` block (per-chain overrides supported).
+> - Pre-liq executor consumes chain config, prefers Odos/1inch per settings, and returns Bundler3 bundle artefacts with in-process submission via Bundler3.
+> - Scoring thresholds are now configurable (min incentive, liquidity score, oracle divergence, net USD).
+
+### Current Highlights (2025-10-18)
+
+- Config-driven end-to-end flow: indexer, scorer, and executor hydrate runtime parameters directly from `preliq` config.
+- Morpho candidates enrich with CREATE2-computed offers, per-chain cache TTLs, and max-health-factor guardrails.
+- Bundler3 bundle builder now emits canonical `multicall(Call[])` payloads with Odos/1inch swap data embedded in callback calldata.
+- PreLiquidation callback contract deployed in repo with Foundry tests ensuring repay/beneficiary flows (ERC20 + WETH unwrap) and Bundler3 submission path now wired through orchestrator.
+- Sample config + docs updated; `npm run build` passes with the new wiring.
+
+### Remaining Blockers
+
+1. **On-chain artifacts** – Deploy / confirm PreLiquidation factories, derive init code hash, and populate env/config (factory + bundler endpoints now in tree).
+2. **Execution handoff** – Bundler3 submission path now live (callback repay/profit handling implemented); outstanding items: nonce management, relay/Timeboost integration, confirmation loop.
+
 #### 1. Contract Addresses (HIGH PRIORITY)
-- [ ] Get Morpho PreLiquidation Factory addresses for Base, Arbitrum, Optimism
-- [ ] Get Bundler3 contract addresses for all chains
-- [ ] Get Odos Router V2 address
-- [ ] Get Morpho Blue main contract address per chain
+- [x] Get Morpho PreLiquidation Factory addresses for Base, Arbitrum, Optimism
+- [x] Get Bundler3 contract addresses for all chains
+- [x] Get Odos Router V2 address
+- [x] Get Morpho Blue main contract address per chain
 
 #### 2. Event Monitoring & CREATE2 (HIGH PRIORITY)
 - [ ] Implement `PreLiquidationCreated` event listener with proper log parsing
-- [ ] Implement CREATE2 address computation using `PreLiquidationAddressLib`
+- [x] Implement CREATE2 address computation using `PreLiquidationAddressLib` (in-code CREATE2 helper complete)
 - [ ] Add block reorganization handling
 - [ ] Add RPC fallback for missed events
 
 #### 3. Offer Parameter Fetching (HIGH PRIORITY)
-- [ ] Implement `fetchOfferParams()` to read from PreLiquidation offer contract:
+- [x] Implement `fetchOfferParams()` to read from PreLiquidation offer contract:
   - `marketId`, `preLLTV`, `preLCF1`, `preLCF2`, `preLIF1`, `preLIF2`
   - `oracleAddress`, `expiry`
-- [ ] Implement `checkAuthorization()` to call `Morpho.isBorrowerAuthorized()`
-- [ ] Add caching layer in Redis for offer params
+- [x] Implement `checkAuthorization()` to call `Morpho.isBorrowerAuthorized()`
+- [ ] Add caching layer in Redis for offer params (currently using in-memory TTL cache)
 
-#### 4. Bundler3 Integration (HIGH PRIORITY)
-- [ ] Build `onPreLiquidate()` calldata encoding
-- [ ] Implement Odos API integration (`POST /sor/quote/v2`)
-- [ ] Implement 1inch API integration (fallback)
-- [ ] Build complete Bundler3 multicall payload:
-  1. Pre-liquidate call
-  2. Swap call
-  3. Repay call
-  4. Profit extraction call
-- [ ] Add multicall encoding with proper ABI
-
+- [x] Implement Odos API integration (`POST /sor/quote/v2`)
+- [x] Implement 1inch API integration (fallback)
+- [x] Build canonical Bundler3 `multicall(Call[])` payload (callbackData packs swap + profit wiring)
+- [x] Finalise callback execution flow:
+  3. Repay call ✅
+  4. Profit extraction call ✅
+- [x] Add multicall encoding with proper ABI
+- [x] Add multicall encoding with proper ABI
 #### 5. Oracle Validation (MEDIUM PRIORITY)
 - [ ] Implement pre-liq oracle price fetching
 - [ ] Compare pre-liq oracle vs market oracle (detect manipulation)
@@ -53,9 +70,9 @@
 - [ ] Add error handling and retry logic
 
 #### 7. Transaction Execution (HIGH PRIORITY)
-- [ ] Implement `executePreLiquidation()` transaction builder
+- [x] Implement `executePreLiquidation()` transaction builder
 - [ ] Add nonce management integration
-- [ ] Add gas estimation and price oracle
+- [x] Add gas estimation and price oracle
 - [ ] For Arbitrum: Implement Timeboost sealed bid submission
 - [ ] For Base/Optimism: Use private RPC endpoints
 - [ ] Add transaction confirmation monitoring
@@ -76,7 +93,7 @@
 - [ ] Wire pre-liq indexer into main orchestrator
 - [ ] Add protocol adapter for 'morphoblue-preliq'
 - [ ] Modify scorer to handle pre-liq candidates
-- [ ] Add pre-liq execution path to executor
+- [x] Add pre-liq execution path to executor
 - [ ] Add fallback to standard Morpho liquidation
 
 #### 10. Testing & Validation (HIGH PRIORITY)
@@ -88,15 +105,9 @@
 - [ ] Dry-run mode for pre-liq (no actual execution)
 
 #### 11. Configuration (MEDIUM PRIORITY)
-- [ ] Add pre-liq specific config section to `config.yaml`
-- [ ] Add environment variables:
-  - `MORPHO_PRELIQ_POLL_MS`
-  - `MORPHO_PRELIQ_MAX_HF`
-  - `PRELIQ_MIN_LIQUIDITY_SCORE`
-  - `PRELIQ_MAX_ORACLE_DIVERGENCE_BPS`
-  - `PRELIQ_MIN_INCENTIVE_BPS`
-  - `PRELIQ_MIN_NET_PROFIT_USD`
-- [ ] Add market-specific pre-liq enablement flags
+- [x] Add pre-liq specific config section to `config.yaml` and `config.example.yaml`
+- [x] Add market/chain-specific pre-liq enablement flags (`preliq.enabled`, `preliq.chains[chainId].enabled`)
+- [ ] Optional: document remaining environment overrides (if we decide to keep them for fallbacks)
 
 #### 12. Documentation (LOW PRIORITY)
 - [ ] Add runbook for pre-liq monitoring

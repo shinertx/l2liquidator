@@ -12,10 +12,12 @@ import { log } from '../infra/logger';
 import { getMorphoOracleRatio } from '../util/morpho_oracle';
 
 // Configuration constants
-const MIN_LIQUIDITY_SCORE = 50; // 0-100 scale
-const MAX_ORACLE_DIVERGENCE_BPS = 200; // 2% max divergence
-const MIN_INCENTIVE_BPS = 150; // 1.5% minimum incentive
-const DEFAULT_MIN_NET_PROFIT_USD = 2.0; // Fallback profit floor if config missing
+const cfg = loadConfig();
+const preliqCfg = cfg.preliq ?? {};
+const MIN_LIQUIDITY_SCORE = preliqCfg.minLiquidityScore ?? 50; // 0-100 scale
+const MAX_ORACLE_DIVERGENCE_BPS = preliqCfg.maxOracleDivergenceBps ?? 200; // 2% max divergence
+const MIN_INCENTIVE_BPS = preliqCfg.minIncentiveBps ?? 150; // 1.5% minimum incentive
+const DEFAULT_MIN_NET_PROFIT_USD = preliqCfg.minNetProfitUsd ?? 2.0; // Fallback profit floor if config missing
 
 const DEFAULT_CLOSE_FACTOR_BPS = 5_000;
 const DEFAULT_BONUS_BPS = 800;
@@ -41,7 +43,6 @@ type PreLiqScore = {
   gasUsd?: number;
 };
 
-const cfg = loadConfig();
 const scorerLog = log.child({ module: 'pipeline.preliq_scorer' });
 
 function normalizeChain(chainId: number): ChainCfg | null {

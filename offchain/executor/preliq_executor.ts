@@ -1,7 +1,12 @@
 import type { AppConfig, ChainCfg } from '../infra/config';
+import { chainById, preliqChainConfig } from '../infra/config';
 import type { Address, Hex } from 'viem';
-import { encodeFunctionData, parseAbiItem } from 'viem';
+import { encodeAbiParameters, encodeFunctionData, parseAbiItem } from 'viem';
 import { base, arbitrum, optimism } from 'viem/chains';
+import { log } from '../infra/logger';
+import type { Candidate } from '../indexer/aave_indexer';
+import type { Plan } from '../simulator/simulate';
+import { sendPreLiqBundle } from './preliq_sender';
 
 // Bundler3 addresses (ChainAgnosticBundlerV2)
 const BUNDLER3 = {
@@ -23,11 +28,13 @@ type PreLiqParams = {
   borrower: Address;
   debtAsset: Address;
   collateralAsset: Address;
-  debtAmount: bigint;
+  repayAmount: bigint;
+  repayShares: bigint;
+  seizeAmount: bigint;
   collateralAmount: bigint;
-  effectiveCloseFactor: number;
-  effectiveLiquidationIncentive: number;
   chainId: number;
+  beneficiary: Address;
+  profitToken: Address;
 };
 
 type SwapQuote = {
@@ -37,10 +44,20 @@ type SwapQuote = {
   gasEstimate: bigint;
 };
 
+export type BundlerCall = {
+  to: Address;
+  data: Hex;
+  value: bigint;
+  skipRevert: boolean;
+  callbackHash: Hex;
+};
+
 /**
  * Get Bundler3 address for chain
  */
-function getBundler3Address(chainId: number): Address | null {
+function getBundler3Address(cfg: AppConfig, chainId: number): Address | null {
+  const chainCfg = preliqChainConfig(cfg, chainId);
+  if (chainCfg?.bundler) return chainCfg.bundler;
   return BUNDLER3[chainId as keyof typeof BUNDLER3] ?? null;
 }
 
@@ -52,7 +69,9 @@ async function getOdosQuote(
   tokenIn: Address,
   tokenOut: Address,
   amountIn: bigint,
-  bundlerAddress: Address
+  bundlerAddress: Address,
+  routerOverride: Address | null,
+  slippageBps: number
 ): Promise<SwapQuote | null> {
   try {
     const odosApiKey = process.env.ODOS_API_KEY;
@@ -60,10 +79,12 @@ async function getOdosQuote(
       return null; // API key required
     }
 
-    const routerAddress = ODOS_ROUTER_V2[chainId as keyof typeof ODOS_ROUTER_V2];
+    const routerAddress = routerOverride ?? ODOS_ROUTER_V2[chainId as keyof typeof ODOS_ROUTER_V2];
     if (!routerAddress) {
       return null;
     }
+
+    const slippagePercent = Math.max(1, slippageBps) / 100;
 
     const response = await fetch('https://api.odos.xyz/sor/quote/v2', {
       method: 'POST',
@@ -81,7 +102,7 @@ async function getOdosQuote(
           tokenAddress: tokenOut,
           proportion: 1,
         }],
-        slippageLimitPercent: 0.5,
+        slippageLimitPercent: slippagePercent,
         userAddr: bundlerAddress,
         referralCode: 0,
         disableRFQs: false,
@@ -133,7 +154,9 @@ async function get1inchQuote(
   tokenIn: Address,
   tokenOut: Address,
   amountIn: bigint,
-  bundlerAddress: Address
+  bundlerAddress: Address,
+  routerOverride: Address | null,
+  slippageBps: number
 ): Promise<SwapQuote | null> {
   try {
     const oneinchApiKey = process.env.ONEINCH_API_KEY;
@@ -141,14 +164,15 @@ async function get1inchQuote(
       return null; // API key required
     }
 
-    const oneinchRouter = '0x1111111254EEB25477B68fb85Ed929f73A960582' as Address;
+    const fallbackRouter = '0x1111111254EEB25477B68fb85Ed929f73A960582' as Address;
+    const oneinchRouter = routerOverride ?? fallbackRouter;
 
     const url = new URL(`https://api.1inch.dev/swap/v5.2/${chainId}/swap`);
     url.searchParams.set('src', tokenIn);
     url.searchParams.set('dst', tokenOut);
     url.searchParams.set('amount', amountIn.toString());
     url.searchParams.set('from', bundlerAddress);
-    url.searchParams.set('slippage', '0.5');
+    url.searchParams.set('slippage', (slippageBps / 100).toString());
     url.searchParams.set('disableEstimate', 'false');
     url.searchParams.set('allowPartialFill', 'false');
 
@@ -182,29 +206,78 @@ async function get1inchQuote(
 export async function buildPreLiqBundle(
   cfg: AppConfig,
   params: PreLiqParams
-): Promise<{ calldata: Hex; estimatedProfit: bigint; gasEstimate: bigint } | null> {
-  const bundler3 = getBundler3Address(params.chainId);
+): Promise<{
+  bundler: Address;
+  bundle: BundlerCall[];
+  calldata: Hex;
+  estimatedProfit: bigint;
+  gasEstimate: bigint;
+  minRepayAssets: bigint;
+} | null> {
+  const chainPreliq = preliqChainConfig(cfg, params.chainId);
+  if (!chainPreliq) {
+    log.debug({ chainId: params.chainId }, 'preliq-chain-config-missing');
+    return null;
+  }
+
+  const bundler3 = getBundler3Address(cfg, params.chainId);
   if (!bundler3) {
     return null;
   }
 
-  // Step 1: Get swap quote (Odos primary, 1inch fallback)
-  let swapQuote = await getOdosQuote(
-    params.chainId,
-    params.collateralAsset,
-    params.debtAsset,
-    params.collateralAmount,
-    bundler3
-  );
+  const chainCfg = chainById(cfg, params.chainId);
+  const wrappedNative = chainCfg?.tokens?.WETH?.address ?? ('0x0000000000000000000000000000000000000000' as Address);
 
-  if (!swapQuote) {
-    swapQuote = await get1inchQuote(
+  const odosRouter = chainPreliq.odosRouter ?? ODOS_ROUTER_V2[params.chainId as keyof typeof ODOS_ROUTER_V2] ?? null;
+  const oneInchRouter = chainPreliq.oneInchRouter ?? null;
+  const slippageBps = cfg.preliq?.aggregator?.slippageBps ?? 50;
+  const primary = cfg.preliq?.aggregator?.primary ?? 'odos';
+
+  // Step 1: Get swap quote (Odos primary, 1inch fallback)
+  const attemptOdosFirst = primary === 'odos';
+  const attemptOneInchFirst = primary === 'oneinch';
+
+  let swapQuote: SwapQuote | null = null;
+
+  const collateralSeized = params.seizeAmount > 0n ? params.seizeAmount : params.collateralAmount;
+
+  const tryOdos = async () => {
+    if (!odosRouter) return null;
+    return getOdosQuote(
       params.chainId,
       params.collateralAsset,
       params.debtAsset,
-      params.collateralAmount,
-      bundler3
+      collateralSeized,
+      bundler3,
+      odosRouter,
+      slippageBps
     );
+  };
+
+  const tryOneInch = async () =>
+    get1inchQuote(
+      params.chainId,
+      params.collateralAsset,
+      params.debtAsset,
+      collateralSeized,
+      bundler3,
+      oneInchRouter,
+      slippageBps
+    );
+
+  if (attemptOdosFirst) {
+    swapQuote = await tryOdos();
+    if (!swapQuote) {
+      swapQuote = await tryOneInch();
+    }
+  } else if (attemptOneInchFirst) {
+    swapQuote = await tryOneInch();
+    if (!swapQuote) {
+      swapQuote = await tryOdos();
+    }
+  } else {
+    swapQuote = await tryOdos();
+    if (!swapQuote) swapQuote = await tryOneInch();
   }
 
   if (!swapQuote) {
@@ -213,8 +286,7 @@ export async function buildPreLiqBundle(
   }
 
   // Step 2: Calculate expected profit
-  const debtToRepay = BigInt(Math.floor(Number(params.debtAmount) * params.effectiveCloseFactor));
-  const collateralSeized = params.collateralAmount;
+  const debtToRepay = params.repayAmount;
   const swapOutput = swapQuote.amountOut;
 
   // Profit = swap output - debt repaid
@@ -224,41 +296,70 @@ export async function buildPreLiqBundle(
     return null; // Not profitable
   }
 
-  // Step 3: Build Bundler3 multicall
-  const calls: Hex[] = [];
+  const SLIPPAGE_DENOM = 10_000n;
+  const boundedSlippage = BigInt(Math.min(Math.max(slippageBps, 0), 10_000));
+  const minRepayAssets = debtToRepay * (SLIPPAGE_DENOM - boundedSlippage) / SLIPPAGE_DENOM;
 
-  // Call 1: onPreLiquidate(offer, borrower, seizeParams)
-  const preLiqCalldata = encodeFunctionData({
+  const callbackData = encodeAbiParameters(
+    [
+      { type: 'address' },
+      { type: 'uint256' },
+      { type: 'address' },
+      { type: 'bytes' },
+      { type: 'address' },
+      { type: 'address' },
+      { type: 'address' },
+      { type: 'uint256' },
+      { type: 'address' },
+    ],
+    [
+      params.debtAsset,
+      minRepayAssets,
+      swapQuote.router,
+      swapQuote.calldata,
+      params.profitToken,
+      params.beneficiary,
+      params.collateralAsset,
+      collateralSeized,
+      wrappedNative,
+    ]
+  );
+
+  const preLiqCall = encodeFunctionData({
+    abi: [parseAbiItem('function preLiquidate(address borrower, uint256 seizedAssets, uint256 repaidShares, bytes data) external')],
+    functionName: 'preLiquidate',
+    args: [params.borrower, collateralSeized, params.repayShares, callbackData],
+  });
+
+  const ZERO_BYTES32 = '0x0000000000000000000000000000000000000000000000000000000000000000' as Hex;
+
+  const bundle: BundlerCall[] = [
+    {
+      to: params.offerAddress,
+      data: preLiqCall,
+      value: 0n,
+      skipRevert: false,
+      callbackHash: ZERO_BYTES32,
+    },
+  ];
+
+  const multicallData = encodeFunctionData({
     abi: [
       parseAbiItem(
-        'function onPreLiquidate(address offer, address borrower, uint256 seizedAssets, uint256 repaidShares, bytes data) external'
+        'function multicall((address to, bytes data, uint256 value, bool skipRevert, bytes32 callbackHash)[] bundle) external payable returns (bytes[] memory)'
       ),
     ],
-    functionName: 'onPreLiquidate',
-    args: [params.offerAddress, params.borrower, collateralSeized, debtToRepay, '0x' as Hex],
-  });
-  calls.push(preLiqCalldata);
-
-  // Call 2: Swap collateral → debt via aggregator
-  calls.push(swapQuote.calldata);
-
-  // Call 3: Repay debt to Morpho
-  // TODO: Build repayment calldata
-
-  // Call 4: Transfer profit to beneficiary
-  // TODO: Build transfer calldata
-
-  // Step 4: Encode final multicall
-  const multicallData = encodeFunctionData({
-    abi: [parseAbiItem('function multicall(bytes[] calldata data) external returns (bytes[] memory)')],
     functionName: 'multicall',
-    args: [calls],
+    args: [bundle],
   });
 
   return {
+    bundler: bundler3,
+    bundle,
     calldata: multicallData,
     estimatedProfit,
-    gasEstimate: swapQuote.gasEstimate + 200_000n, // Add overhead for pre-liq + repay
+    gasEstimate: swapQuote.gasEstimate + 220_000n,
+    minRepayAssets,
   };
 }
 
@@ -268,39 +369,69 @@ export async function buildPreLiqBundle(
 /**
  * Execute pre-liquidation atomically
  */
+type ExecutePreLiqArgs = {
+  cfg: AppConfig;
+  chain: ChainCfg;
+  candidate: Candidate & { preliq: NonNullable<Candidate['preliq']> };
+  plan: Plan;
+  beneficiary: Address;
+  pk: `0x${string}`;
+  privateRpc?: string;
+};
+
 export async function executePreLiquidation(
-  candidate: any,
-  cfg: AppConfig
-): Promise<{ success: boolean; txHash?: Hex; error?: string }> {
+  args: ExecutePreLiqArgs
+): Promise<{
+  success: boolean;
+  bundle?: { bundler: Address; bundle: BundlerCall[]; calldata: Hex; estimatedProfit: bigint; gasEstimate: bigint; minRepayAssets: bigint };
+  txHash?: Hex;
+  error?: string;
+}> {
+  const { cfg, chain, candidate, plan, beneficiary, pk, privateRpc } = args;
+
+  if (!candidate.preliq) {
+    return { success: false, error: 'candidate-missing-preliq' };
+  }
+
   try {
-    // Extract parameters from candidate
     const params: PreLiqParams = {
-      offerAddress: candidate.preliq.offerAddress,
+      offerAddress: candidate.preliq.offerAddress as Address,
       borrower: candidate.borrower as Address,
-      debtAsset: candidate.debtAsset as Address,
-      collateralAsset: candidate.collateralAsset as Address,
-      debtAmount: BigInt(candidate.debtAmount || 0),
-      collateralAmount: BigInt(candidate.collateralAmount || 0),
-      effectiveCloseFactor: candidate.preliq.effectiveCloseFactor,
-      effectiveLiquidationIncentive: candidate.preliq.effectiveLiquidationIncentive,
-      chainId: candidate.chainId,
+      debtAsset: candidate.debt.address,
+      collateralAsset: candidate.collateral.address,
+      repayAmount: plan.repayAmount,
+      repayShares: plan.morpho?.repayShares ?? 0n,
+      seizeAmount: plan.seizeAmount,
+      collateralAmount: candidate.collateral.amount,
+      chainId: chain.id,
+      beneficiary,
+      profitToken: candidate.debt.address,
     };
 
-    // Build the bundle
-    const bundle = await buildPreLiqBundle(cfg, params);
-    if (!bundle) {
-      return { success: false, error: 'Failed to build bundle (no profitable swap route)' };
+    if (params.repayShares === 0n) {
+      return { success: false, error: 'missing-repay-shares' };
     }
 
-    // TODO: Implement transaction submission
-    // - Get nonce from nonce manager
-    // - Build transaction with appropriate gas settings
-    // - For Arbitrum: Submit via Timeboost with sealed bid
-    // - For Base/Optimism: Submit via private RPC
-    // - Wait for confirmation
-    // - Log metrics
+    const bundle = await buildPreLiqBundle(cfg, params);
+    if (!bundle) {
+      log.debug({ borrower: candidate.borrower, chainId: chain.id }, 'preliq-bundle-build-failed');
+      return { success: false, error: 'bundle-build-failed' };
+    }
 
-    return { success: false, error: 'Transaction submission not implemented yet' };
+    log.debug({
+      borrower: candidate.borrower,
+      chainId: chain.id,
+      offer: candidate.preliq.offerAddress,
+      estimatedProfit: bundle.estimatedProfit.toString(),
+      gasEstimate: bundle.gasEstimate.toString(),
+    }, 'preliq-bundle-built');
+
+    const chainPreliq = preliqChainConfig(cfg, chain.id);
+    const rpcOverride = chainPreliq?.privateRpc ?? chain.privtx ?? privateRpc;
+
+    const txHash = await sendPreLiqBundle(chain.id, chain.rpc, pk, bundle.bundler, bundle.bundle, rpcOverride);
+
+    return { success: true, bundle, txHash };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

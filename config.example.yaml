@@ -562,6 +562,53 @@ indexer:
   pollMs: 200
   hfThreshold: 0.995
 
+preliq:
+  enabled: false
+  pollIntervalMs: 10000
+  lookbackBlocks: 1000
+  maxHealthFactor: 1.05
+  minIncentiveBps: 150
+  minLiquidityScore: 50
+  maxOracleDivergenceBps: 200
+  minNetProfitUsd: 2
+  aggregator:
+    primary: odos
+    slippageBps: 40
+  chains:
+    "42161":
+      enabled: false
+      factory: "0x6FF33615e792E35ed1026ea7cACCf42D9BF83476"
+      initCodeHash: "${PRELIQ_INIT_CODE_HASH}"
+      bundler: "0x1FA4431bC113D308bEE1d46B0e98Cb805FB48C13"
+      morpho: "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb"
+      odosRouter: "0xa669e7A0d4b3e4Fa48af2dE86BD4CD7126Be4e13"
+      oneInchRouter: "0x1111111254EEB25477B68fb85Ed929f73A960582"
+      pollIntervalMs: 5000
+      lookbackBlocks: 500
+      cacheTtlMs: 60000
+    "10":
+      enabled: false
+      factory: "0x6FF33615e792E35ed1026ea7cACCf42D9BF83476"
+      initCodeHash: "${PRELIQ_INIT_CODE_HASH}"
+      bundler: "0xfBCD3c258fEb131D8E038F2A3A670A7bE0507c05"
+      morpho: "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb"
+      odosRouter: "0xCa423977156BB05b13A2BA3b76Bc5419E2fE9680"
+      oneInchRouter: "0x1111111254EEB25477B68fb85Ed929f73A960582"
+      pollIntervalMs: 5000
+      lookbackBlocks: 500
+      cacheTtlMs: 60000
+    "8453":
+      enabled: false
+      factory: "0x6FF33615e792E35ed1026ea7cACCf42D9BF83476"
+      initCodeHash: "${PRELIQ_INIT_CODE_HASH}"
+      bundler: "0x6566194141EeFA99Af43Bb5Aa71460Ca2Dc90245"
+      morpho: "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb"
+      odosRouter: "0x19cEeAd7105607Cd444F5ad10dd51356436095a1"
+      oneInchRouter: "0x1111111254EEB25477B68fb85Ed929f73A960582"
+      pollIntervalMs: 5000
+      lookbackBlocks: 500
+      cacheTtlMs: 60000
+
 analysis:
   openaiKey: ${OPENAI_API_KEY}
 
