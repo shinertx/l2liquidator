@@ -29,7 +29,7 @@ Morpho Factory Logs → PreLiq Indexer → Scorer → Bundler3 Executor → Prof
 
 2. **`offchain/executor/preliq_executor.ts`** (140 lines)
    - Builds Bundler3 multicall payloads
-   - Integrates Odos (primary) and 1inch (fallback) for swaps
+   - Integrates 1inch (primary) with Odos fallback when configured
    - Executes atomic: preLiquidate → swap → repay → profit extraction
    - No flash loan required (inventory-free via callbacks)
 
@@ -81,7 +81,7 @@ See detailed TODO list in `/docs/PRELIQ_IMPLEMENTATION_STATUS.md`
 1. Get Morpho contract addresses (Factory, Bundler3, Morpho Blue)
 2. Implement event monitoring with proper ABI encoding
 3. Implement CREATE2 address computation
-4. Wire Odos/1inch API integration
+4. Wire 1inch API integration (+ optional Odos fallback)
 5. Build Bundler3 multicall encoding
 6. Implement transaction execution with Timeboost
 

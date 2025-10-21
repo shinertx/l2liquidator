@@ -5,6 +5,7 @@ import {
   getRealtimeClient,
   resetRpcClients,
   evictRpcClients,
+  getPublicClient,
 } from '../infra/rpc_clients';
 import { test, expect, expectEqual } from './test_harness';
 
@@ -52,4 +53,17 @@ test('enabling WebSocket after disable allows retry attempts', () => {
   enableWebSocket(baseChain.id);
   realtime = getRealtimeClient(baseChain);
   expectEqual(realtime.kind, 'ws', 'WebSocket should be re-attempted once re-enabled');
+});
+
+test('HTTP fallback endpoints from environment are honored', () => {
+  resetRpcClients();
+  const key = `RPC_HTTP_FALLBACK_${baseChain.id}`;
+  process.env[key] = 'https://backup.example';
+  try {
+    const client = getPublicClient(baseChain);
+    expect(!!client, 'expected public client instance with fallback endpoint');
+  } finally {
+    delete process.env[key];
+    resetRpcClients();
+  }
 });

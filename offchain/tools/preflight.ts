@@ -1,12 +1,13 @@
 import '../infra/env';
 import fs from 'fs';
-import { Address, createPublicClient, formatEther, formatUnits, getAddress, http, parseEther } from 'viem';
+import { Address, formatEther, formatUnits, getAddress, parseEther } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { loadConfig, ChainCfg, TokenInfo, AppConfig } from '../infra/config';
 import { log } from '../infra/logger';
 import { db, waitForDb, classifyDbError, type DbErrorInfo } from '../infra/db';
 import { redis } from '../infra/redis';
 import { oraclePriceDetails } from '../indexer/price_watcher';
+import { getPublicClient } from '../infra/rpc_clients';
 
 const QUOTER_V2_ABI = [
   {
@@ -264,7 +265,7 @@ async function checkRpcs(cfg = loadConfig()): Promise<boolean> {
   let ok = true;
   for (const chain of cfg.chains.filter((c) => c.enabled)) {
     try {
-      const client = createPublicClient({ transport: http(chain.rpc) });
+      const client = getPublicClient(chain);
       const block = await client.getBlockNumber();
       log.info({ chainId: chain.id, block: block.toString() }, 'preflight-rpc-ok');
       recordDiagnostic('rpc', 'ok', `RPC reachable for chain ${chain.id}`, undefined, { chainId: chain.id, block: block.toString(), rpc: chain.rpc });
@@ -335,7 +336,7 @@ async function checkSubgraphs(cfg = loadConfig()): Promise<boolean> {
 async function checkQuotes(cfg = loadConfig()): Promise<boolean> {
   let ok = true;
   for (const chain of cfg.chains.filter((c) => c.enabled)) {
-    const client = createPublicClient({ transport: http(chain.rpc) });
+    const client = getPublicClient(chain);
     const tokens = chain.tokens;
     const usdc = tokens['USDC'] || tokens['USDC.e'] || tokens['USDbC'];
     const weth = tokens['WETH'] || tokens['ETH'];
@@ -350,7 +351,7 @@ async function checkQuotes(cfg = loadConfig()): Promise<boolean> {
     const usdcAddr = getAddress(usdc.address as Address);
     const wethAddr = getAddress(weth.address as Address);
 
-  const fees = [100, 500, 3000];
+    const fees = [100, 500, 3000];
     for (const fee of fees) {
       try {
         if (!chain.quoter) {
@@ -378,7 +379,7 @@ async function checkQuotes(cfg = loadConfig()): Promise<boolean> {
       }
     }
 
-  const dex = cfg.dexRouters?.[chain.id] ?? {};
+    const dex = cfg.dexRouters?.[chain.id] ?? {};
     if (dex.camelotV2) {
       try {
         const amounts = await client.readContract({
@@ -445,7 +446,7 @@ async function checkQuotes(cfg = loadConfig()): Promise<boolean> {
 async function checkOracles(cfg = loadConfig()): Promise<boolean> {
   let ok = true;
   for (const chain of cfg.chains.filter((c) => c.enabled)) {
-    const client = createPublicClient({ transport: http(chain.rpc) });
+    const client = getPublicClient(chain);
     for (const [symbol, token] of Object.entries(chain.tokens)) {
       if (!token.chainlinkFeed) continue;
       try {
@@ -474,13 +475,20 @@ async function checkOracles(cfg = loadConfig()): Promise<boolean> {
   return ok;
 }
 
-function minNativeBalanceWei(chainId: number): bigint {
-  const specific = process.env[MIN_NATIVE_BALANCE_ENV[chainId] ?? ''] ?? process.env.MIN_NATIVE_BALANCE_DEFAULT;
-  const raw = (specific && specific.trim().length > 0 ? specific : DEFAULT_MIN_NATIVE_BALANCE).trim();
+function minNativeBalanceWei(chain: ChainCfg): bigint {
+  const envKey = MIN_NATIVE_BALANCE_ENV[chain.id];
+  const specific = (envKey ? process.env[envKey] : undefined) ?? process.env.MIN_NATIVE_BALANCE_DEFAULT;
+  const configOverride =
+    chain.minNativeBalanceEth !== undefined && !Number.isNaN(chain.minNativeBalanceEth)
+      ? chain.minNativeBalanceEth.toString()
+      : undefined;
+  const rawCandidate =
+    specific && specific.trim().length > 0 ? specific : configOverride ?? DEFAULT_MIN_NATIVE_BALANCE;
+  const raw = rawCandidate.trim();
   try {
     return parseEther(raw);
   } catch {
-    log.warn({ chainId, raw }, 'preflight-native-balance-threshold-invalid');
+    log.warn({ chainId: chain.id, raw }, 'preflight-native-balance-threshold-invalid');
     return parseEther(DEFAULT_MIN_NATIVE_BALANCE);
   }
 }
@@ -498,7 +506,7 @@ async function checkWalletBalances(cfg = loadConfig()): Promise<boolean> {
     const pk = process.env[pkEnv];
     if (!pk || pk.includes('MISSING')) {
       log.warn({ chainId: chain.id, env: pkEnv }, 'preflight-wallet-missing');
-  recordDiagnostic('wallet', 'error', `Missing private key env ${pkEnv}`, `Populate ${pkEnv} with a funded wallet.`, { chainId: chain.id, env: pkEnv });
+      recordDiagnostic('wallet', 'error', `Missing private key env ${pkEnv}`, `Populate ${pkEnv} with a funded wallet.`, { chainId: chain.id, env: pkEnv });
       ok = false;
       continue;
     }
@@ -511,10 +519,10 @@ async function checkWalletBalances(cfg = loadConfig()): Promise<boolean> {
       ok = false;
       continue;
     }
-    const client = createPublicClient({ transport: http(chain.rpc) });
+    const client = getPublicClient(chain);
     try {
       const balance = await client.getBalance({ address: account.address });
-      const minBalance = minNativeBalanceWei(chain.id);
+      const minBalance = minNativeBalanceWei(chain);
       const balanceEth = formatEther(balance);
       const minEth = formatEther(minBalance);
       if (balance < minBalance) {
@@ -583,7 +591,7 @@ async function checkContracts(cfg = loadConfig()): Promise<boolean> {
       ok = false;
       continue;
     }
-    const client = createPublicClient({ transport: http(chain.rpc) });
+    const client = getPublicClient(chain);
     try {
       const [owner, paused, chainBeneficiary] = await Promise.all([
         client.readContract({ address, abi: LIQUIDATOR_STATE_ABI, functionName: 'owner' }),
@@ -595,12 +603,27 @@ async function checkContracts(cfg = loadConfig()): Promise<boolean> {
       const contractBeneficiary = chainBeneficiary as `0x${string}`;
       const safeEnv = SAFE_ADDRESS_ENV[chain.id];
       const expectedOwner = safeEnv && process.env[safeEnv] ? getAddress(process.env[safeEnv] as Address) : undefined;
-      if (expectedOwner && expectedOwner.toLowerCase() !== chainOwner.toLowerCase()) {
-        log.warn({ chainId: chain.id, owner: chainOwner, expectedOwner }, 'preflight-liquidator-owner-mismatch');
-        recordDiagnostic('contracts', 'warn', 'Liquidator owner mismatch', 'Update SAFE address or transfer ownership.', { chainId: chain.id, owner: chainOwner, expectedOwner });
-      } else {
+      const allowlist = (chain.ownerAllowlist ?? []).map((addr) => getAddress(addr as Address).toLowerCase());
+      const normalizedOwner = chainOwner.toLowerCase();
+      const expectedLower = expectedOwner?.toLowerCase();
+      const ownerStatus = expectedLower && normalizedOwner === expectedLower
+        ? 'env'
+        : allowlist.includes(normalizedOwner)
+          ? 'allowlist'
+          : 'unknown';
+
+      if (ownerStatus === 'env') {
         log.info({ chainId: chain.id, owner: chainOwner }, 'preflight-liquidator-owner');
         recordDiagnostic('contracts', 'ok', `Owner verified on chain ${chain.id}`, undefined, { chainId: chain.id, owner: chainOwner });
+      } else if (ownerStatus === 'allowlist') {
+        log.info({ chainId: chain.id, owner: chainOwner }, 'preflight-liquidator-owner-allowlisted');
+        recordDiagnostic('contracts', 'ok', `Owner allowlisted on chain ${chain.id}`, undefined, { chainId: chain.id, owner: chainOwner });
+      } else if (expectedLower || allowlist.length > 0) {
+        log.warn({ chainId: chain.id, owner: chainOwner, expectedOwner, allowlist }, 'preflight-liquidator-owner-mismatch');
+        recordDiagnostic('contracts', 'warn', 'Liquidator owner mismatch', 'Update SAFE address or adjust allowlist.', { chainId: chain.id, owner: chainOwner, expectedOwner, allowlist });
+      } else {
+        log.info({ chainId: chain.id, owner: chainOwner }, 'preflight-liquidator-owner');
+        recordDiagnostic('contracts', 'ok', `Owner reported on chain ${chain.id}`, undefined, { chainId: chain.id, owner: chainOwner });
       }
       if (isPaused) {
         log.error({ chainId: chain.id }, 'preflight-liquidator-paused');

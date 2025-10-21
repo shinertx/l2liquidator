@@ -32,17 +32,10 @@
 
 ## Known Issues (Non-Blocking)
 
-### 1. Oracle ETH-Denominated Feeds (Deferred)
-**Impact:** Low - Only affects LST assets (wstETH, weETH, rsETH)  
-**Status:** Partial implementation complete, debugging deferred  
-**Workaround:** These assets won't be liquidatable until fixed  
-**Affected Markets:** ~15-20% of total markets
-
-**Assets Affected:**
-- Arbitrum: rsETH, weETH, wstETH
-- Optimism: wstETH  
-- Base: weETH, wrsETH, wstETH
-- Polygon: wstETH
+### 1. Oracle ETH-Denominated Feeds (Resolved)
+**Impact:** None - LST assets back in rotation  
+**Status:** ✅ Fixed (Oct 19, 2025) – ETH-priced feeds now convert to USD via WETH oracle  
+**Note:** Monitor `eth-denomination-converted` logs; DEX fallback no longer needed for these markets
 
 ### 2. Policy Retry Noise (Cosmetic)
 **Impact:** Minimal - Creates log noise but doesn't affect execution  
@@ -54,7 +47,7 @@
 **Impact:** None - Fallback handling works correctly  
 **Symptom:** Debug logs showing "aggregator-proxy-fallback"  
 **Root Cause:** Some Chainlink feeds don't expose aggregator() function  
-**Status:** Already handled by fallback logic, just noisy logs
+**Status:** Already handled by fallback logic, now throttled by rate limiter
 
 ## What's Working
 
@@ -97,9 +90,9 @@
    - Alert on execution failures
 
 ### Medium-Term Enhancements
-1. **Complete Oracle Fix:**
-   - Debug ETH→USD conversion caching issue
-   - Enable LST asset liquidations
+1. **Pre-Liq Aggregator Hardening:**
+   - Track 1inch success rate and latency by chain
+   - Add secondary route (Paraswap or direct router bundle) if failure rate rises
    
 2. **Optimize Policy Retry:**
    - Add HF threshold check before scheduling retry

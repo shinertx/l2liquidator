@@ -1,4 +1,4 @@
-import { createPublicClient, http, webSocket } from 'viem';
+import { createPublicClient, fallback, http, webSocket } from 'viem';
 import type { ChainCfg } from './config';
 import { log } from './logger';
 
@@ -62,11 +62,45 @@ function normalizeWsUrls(urls: (string | null | undefined)[]): string[] {
   return out;
 }
 
+function normalizeHttpUrls(urls: (string | null | undefined)[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const candidate of urls) {
+    if (!candidate) continue;
+    const trimmed = candidate.trim();
+    if (!trimmed) continue;
+    if (!/^https?:\/\//i.test(trimmed)) continue;
+    const normalized = trimmed;
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+
 function wsFallbacksFromEnv(chain: ChainCfg): string[] {
   const candidates: string[] = [];
   const keyById = `RPC_WS_FALLBACK_${chain.id}`;
   const keyByName = `RPC_WS_FALLBACK_${chain.name.replace(/[^A-Za-z0-9]/g, '').toUpperCase()}`;
   for (const key of [keyById, keyByName]) {
+    const raw = process.env[key];
+    if (!raw) continue;
+    const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    candidates.push(...parts);
+  }
+  return candidates;
+}
+
+function httpFallbacksFromEnv(chain: ChainCfg): string[] {
+  const candidates: string[] = [];
+  const baseKeyName = chain.name.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  const keys = [
+    `RPC_HTTP_FALLBACK_${chain.id}`,
+    `RPC_HTTP_FALLBACK_${baseKeyName}`,
+    `RPC_FALLBACK_${chain.id}`,
+    `RPC_FALLBACK_${baseKeyName}`,
+  ];
+  for (const key of keys) {
     const raw = process.env[key];
     if (!raw) continue;
     const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
@@ -82,17 +116,39 @@ function wsCandidatesForChain(chain: ChainCfg): string[] {
   return normalizeWsUrls([primary, ...cfgFallbacks, ...envFallbacks]);
 }
 
+function httpCandidatesForChain(chain: ChainCfg): string[] {
+  const cfgFallbacks = Array.isArray(chain.rpcFallbacks) ? chain.rpcFallbacks : [];
+  const envFallbacks = httpFallbacksFromEnv(chain);
+  return normalizeHttpUrls([chain.rpc, ...cfgFallbacks, ...envFallbacks]);
+}
+
 function createHttpClient(chain: ChainCfg): PublicClientInstance {
+  const candidates = httpCandidatesForChain(chain);
+  if (candidates.length === 0) {
+    throw new Error(`No HTTP RPC endpoints configured for chain ${chain.id}`);
+  }
+  const batchConfig = {
+    // Allow viem to coalesce requests per tick, reducing raw RPC volume under load.
+    batchSize: Number(process.env.RPC_HTTP_BATCH_SIZE ?? 20),
+    wait: Number(process.env.RPC_HTTP_BATCH_DELAY_MS ?? 10),
+  };
+  const transports = candidates.map((url) => http(url, { batch: batchConfig }));
+  const transport =
+    transports.length === 1
+      ? transports[0]
+      : fallback(transports, {
+          key: `http-fallback-${chain.id}`,
+          name: `HttpFallback(${chain.name})`,
+          retryCount: Number(process.env.RPC_HTTP_FALLBACK_RETRY_COUNT ?? 0),
+          retryDelay: Number(process.env.RPC_HTTP_FALLBACK_RETRY_DELAY_MS ?? 0),
+        });
   const client = createPublicClient({
-    transport: http(chain.rpc, {
-      batch: {
-        // Allow viem to coalesce requests per tick, reducing raw RPC volume under load.
-        batchSize: Number(process.env.RPC_HTTP_BATCH_SIZE ?? 20),
-        wait: Number(process.env.RPC_HTTP_BATCH_DELAY_MS ?? 10),
-      },
-    }),
+    transport,
   });
-  log.info({ chainId: chain.id, rpc: chain.rpc }, 'rpc-http-client-created');
+  log.info(
+    { chainId: chain.id, rpc: candidates[0], fallbacks: candidates.slice(1) },
+    'rpc-http-client-created',
+  );
   return client;
 }
 

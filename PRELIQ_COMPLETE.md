@@ -14,7 +14,7 @@ npm run build → ✅ SUCCESS (0 errors)
 | File | Size | Status | Purpose |
 |------|------|--------|---------|
 | `offchain/indexer/morpho_preliq_indexer.ts` | 9.6 KB | ✅ Built | Factory event monitoring, CREATE2 prediction, offer discovery |
-| `offchain/executor/preliq_executor.ts` | 11.2 KB | ✅ Built | Odos + 1inch integration, Bundler3 multicall, atomic execution |
+| `offchain/executor/preliq_executor.ts` | 11.2 KB | ✅ Built | 1inch integration with optional Odos fallback, Bundler3 multicall, atomic execution |
 | `offchain/pipeline/preliq_scorer.ts` | 5.4 KB | ✅ Built | 7 validation checks, profitability scoring |
 | `offchain/tools/public_allocator_probe.ts` | 3.5 KB | ✅ Built | Liquidity intelligence via Public Allocator API |
 | `offchain/infra/morpho_addresses.ts` | 1.8 KB | ✅ Built | Contract address mapping (Morpho, Bundler3, Odos, 1inch) |
@@ -49,11 +49,11 @@ if (preLiqEnabled) {
 }
 ```
 
-### 2. **Odos + 1inch Swap Integration** (COMPLETE)
+### 2. **1inch + Odos Swap Integration** (COMPLETE)
 Full API integration with automatic fallback:
 
 ```typescript
-// Primary: Odos Router V2
+// Primary: 1inch (Odos used when API key present)
 const odosQuote = await getOdosQuote(chainId, tokenIn, tokenOut, amount, bundler);
 
 // Fallback: 1inch V5
@@ -63,7 +63,7 @@ if (!odosQuote) {
 ```
 
 **Addresses Configured**:
-- Odos Router V2: Base (0x19cEe...), Arbitrum (0xa669e...), Optimism (0xCa42...)
+- Odos Router V2 (fallback): Base (0x19cEe...), Arbitrum (0xa669e...), Optimism (0xCa42...)
 - 1inch V5: 0x1111111254EEB25477B68fb85Ed929f73A960582 (all chains)
 - Bundler3: 0x23055618898e202386e6c13955a58D3C68200BFB (Base/ARB/OP)
 
@@ -193,7 +193,7 @@ docker-compose restart
 ### Week 3 (Testing & Integration)
 - [ ] Fork testing with Foundry on Base/ARB/OP
 - [ ] Dry-run validation (discover offers, log scoring decisions)
-- [ ] Add Odos + 1inch API keys to production environment
+- [ ] Add 1inch API key (and Odos key if fallback desired) to production environment
 - [ ] Implement transaction submission in `executePreLiquidation()`:
   - Nonce management
   - Gas estimation
@@ -244,7 +244,7 @@ This implementation follows our **Prime Directive**:
 **DELIVERED TODAY**:
 - ✅ 31.5 KB production TypeScript code
 - ✅ Full orchestrator integration
-- ✅ Odos + 1inch swap routing
+- ✅ 1inch swap routing with Odos fallback
 - ✅ CREATE2 offer discovery (ready for contracts)
 - ✅ 7-point validation scoring
 - ✅ Prometheus metrics

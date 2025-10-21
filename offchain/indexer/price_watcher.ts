@@ -8,7 +8,9 @@ import { log } from '../infra/logger';
 type RpcClient = PublicClient<Transport, Chain | undefined, any>;
 
 const ORACLE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours – stablecoin feeds on L2 can stay flat for long stretches
-const ROUTE_TTL_MS = 5_000;
+const ORACLE_ERROR_RETRY_MS = 15_000; // retry quickly after transient RPC failures
+const ROUTE_TTL_MS = Math.max(2_000, Number(process.env.ROUTE_CACHE_TTL_MS ?? 15_000));
+const ROUTE_ERROR_TTL_MS = Math.max(1_000, Number(process.env.ROUTE_CACHE_ERROR_TTL_MS ?? 5_000));
 
 type OracleObservation = {
   feed: string | null;
@@ -246,9 +248,20 @@ async function cachedOracleDetail(client: RpcClient, token: TokenInfo): Promise<
   if (entry?.pending) {
     return entry.pending;
   }
-  const pending = loadOracleDetail(client, token).then((value) => {
-    oracleCache.set(key, { value, expires: Date.now() + ORACLE_TTL_MS });
-    return value;
+  const pending: Promise<OracleObservation> = loadOracleDetail(client, token).then((value) => {
+    const existing = oracleCache.get(key);
+    const isValueUsable = value.priceUsd != null && value.decimals != null && !value.stale;
+    const existingUsable = existing?.value?.priceUsd != null && existing.value.decimals != null && existing.value.stale === false;
+  const nextValue: OracleObservation = isValueUsable ? value : existingUsable ? existing!.value! : value;
+    const ttl = isValueUsable ? ORACLE_TTL_MS : ORACLE_ERROR_RETRY_MS;
+    if (!isValueUsable && existingUsable && value.error) {
+      log.debug({
+        feed: token.chainlinkFeed,
+        error: value.error,
+      }, 'oracle-fetch-error-using-cached');
+    }
+    oracleCache.set(key, { value: nextValue, expires: Date.now() + ttl });
+    return nextValue;
   });
   oracleCache.set(key, { value: entry?.value, expires: entry?.expires ?? 0, pending });
   return pending;
@@ -283,7 +296,7 @@ async function cachedOraclePrice(client: RpcClient, token: TokenInfo, chain?: Ch
       t.address.toLowerCase() === chain.tokens.WETH?.address.toLowerCase()
     );
     if (wethToken?.chainlinkFeed) {
-      const ethUsdPrice = await cachedOraclePrice(client, wethToken);
+      const ethUsdPrice = await cachedOraclePrice(client, wethToken, chain);
       if (ethUsdPrice !== undefined && ethUsdPrice > 0) {
         const convertedPrice = detail.priceUsd * ethUsdPrice;
         log.debug({
@@ -365,8 +378,17 @@ async function cachedBestRoute(params: {
       routeCache.set(key, { value, expires: Date.now() + ROUTE_TTL_MS });
       return value;
     })
-    .catch(() => {
-      routeCache.delete(key);
+    .catch((err) => {
+      log.debug(
+        {
+          chainId: chain.id,
+          collateral: collateral.address,
+          debt: debt.address,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'route-cache-miss'
+      );
+      routeCache.set(key, { value: undefined, expires: Date.now() + ROUTE_ERROR_TTL_MS });
       return undefined;
     });
   routeCache.set(key, { value: entry?.value, expires: entry?.expires ?? 0, pending });

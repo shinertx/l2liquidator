@@ -40,7 +40,7 @@
 
 4. EXECUTION LAYER (preliq_executor.ts)
    ├─ Get Bundler3 contract
-   ├─ Route swap via Odos (primary) / 1inch (fallback)
+   ├─ Route swap via 1inch (primary) / Odos (fallback when enabled)
    ├─ Build atomic multicall:
    │   1. onPreLiquidate() → seize collateral
    │   2. Swap collateral → debt asset
@@ -76,20 +76,20 @@
 
 **Key Functions:**
 - `getBundler3Address()` - Get Bundler3 contract per chain
-- `getOdosQuote()` - Primary swap routing via Odos API v2
+- `getOdosQuote()` - Optional Odos swap routing when API key present
 - `get1inchQuote()` - Fallback swap routing via 1inch v5
 - `buildPreLiqBundle()` - Construct Bundler3 multicall payload
 - `executePreLiquidation()` - Submit transaction with MEV protection
 
 **Bundler3 Multicall Steps:**
 1. `onPreLiquidate(offer, borrower, seizeParams)` → receive collateral
-2. Swap collateral → debt via Odos/1inch
+2. Swap collateral → debt via 1inch/Odos
 3. Repay debt to Morpho
 4. Transfer profit to beneficiary
 
 **Status:** ✅ Skeleton complete, awaiting:
 - Bundler3 addresses (mapped, need verification)
-- Odos/1inch API keys + integration
+- 1inch API integration (+ optional Odos key)
 - Transaction nonce management
 - Timeboost client integration
 
@@ -153,7 +153,7 @@ Optimism: 0x23055618898e202386e6c13955a58D3C68200BFB
 Polygon:  0x23055618898e202386e6c13955a58D3C68200BFB
 ```
 
-### Odos Router V2
+### Odos Router V2 (Optional Fallback)
 ```
 Ethereum: 0xCf5540fFFCdC3d510B18bFcA6d2b9987b0772559
 Base:     0x19cEeAd7105607Cd444F5ad10dd51356436095a1
@@ -204,7 +204,7 @@ Optimism: 0x0000000000000000000000000000000000000000  ← NEEDS DEPLOYMENT
 - [ ] Deploy PreLiquidationFactory contracts (Base, Arbitrum, Optimism)
 - [ ] Update PRELIQ_FACTORY addresses in morpho_preliq_indexer.ts
 - [ ] Implement CREATE2 computation with actual initCodeHash
-- [ ] Add Odos/1inch API keys to environment
+- [ ] Add 1inch API key (and Odos key if fallback desired) to environment
 - [ ] Complete offer parameter fetching (contract ABI calls)
 - [ ] Implement Bundler3 multicall encoding
 

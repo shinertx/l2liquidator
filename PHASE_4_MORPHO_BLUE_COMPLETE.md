@@ -1,41 +1,47 @@
 # PHASE 4: MORPHO BLUE INTEGRATION - COMPLETE ✅
-
 ## Summary
-Successfully integrated Morpho Blue permissionless lending protocol on Base. Morpho Blue offers isolated lending markets with LLTV-based risk parameters, pre-liquidations, and built-in flash loan callbacks for capital-efficient liquidations.
+The Morpho Blue pipeline is largely scaffolded, but as of 2025-10-21 it is not wired into the live runner. Morpho Blue offers isolated lending markets with LLTV-based risk parameters, pre-liquidations, and built-in flash loan callbacks for capital-efficient liquidations.
 
----
+> ⚠️ **Reality check — outstanding blockers**
+> - Populate real Morpho markets in `config.yaml` and keep them disabled until validation completes.
+> - Add `contracts.morphoBlueLiquidator` per chain and teach `liquidatorForChain` / `orchestrator` to pick it instead of the generic liquidator address.
+> - Supply ODOS / 1inch API credentials plus PRELIQ factory + initCodeHash env vars before enabling pre-liq execution.
+> - Dry-run simulator + executor with production endpoints; confirm swaps succeed for LSD pairs (cbETH, wstETH).
+> - Deploy MorphoBlueLiquidator to Base and capture the address for config + allowlist scripts.
 
-## 📋 **CHANGES IMPLEMENTED**
-
-### 1. Smart Contract - `contracts/MorphoBlueLiquidator.sol` ✅
-- **Existing Contract**: Already present (231 lines)
-- **Features**:
-  - Flash loan liquidations with Morpho callbacks
-  - `onMorphoFlashLoan()` callback implementation
-  - Liquidation with `MarketParams` (isolated markets)
-  - Multi-DEX routing support (UniV3, UniV2, Solidly)
-  - Profit guards and slippage protection
-  - Owner-only execution with executor delegation
-  - Pausable functionality
-- **Status**: Ready for deployment on Base
-
-### 2. Indexer - `offchain/indexer/morphoblue_indexer.ts` ✅
-- **Existing Indexer**: Already fully functional (274 lines)
-- **Features**:
-  - GraphQL API integration (`https://blue-api.morpho.org/graphql`)
-  - Health factor < threshold detection (default 1.05)
-  - Isolated market support (uniqueKey per market)
-  - MarketParams extraction (oracle, IRM, LLTV)
-  - BorrowShares tracking for accurate liquidations
-  - Chain filtering (Base = 8453)
-  - Exponential backoff on errors
-- **Status**: Operational
-
-### 3. Protocol Adapter - `offchain/protocols/morphoblue.ts` ✅
-- **Existing Adapter**: Already functional (13 lines)
+### 3. Protocol Adapter - `offchain/protocols/morphoblue.ts` ✅ (streaming)
 - **Functions**:
   - `streamCandidates()` ✅
   - `pollCandidatesOnce()` ✅
+  - `simulate()` ✅ (delegates to Aave simulator — tune once markets live)
+- **Status**: Requires orchestrator wiring + dedicated liquidator address before enabling
+
+#### `config.yaml` - Markets
+> 📌 **Pending**: Morpho Blue markets are staged in `config.example.yaml`. Copy the desired markets into `config.yaml` with `enabled: false` until the end-to-end dry run clears.
+
+### What's Working NOW:
+1. ✅ TypeScript compiles without errors
+2. ✅ Morpho Blue adapter registered (streaming only)
+3. ⏳ Markets pending in `config.yaml`
+4. ⏳ Indexer needs production credentials + validation
+5. ✅ Smart contract ready for deployment
+6. ✅ Flash loan callback implementation complete
+7. ⏳ Health factor detection pending live markets
+8. ✅ MarketParams extraction for isolated markets
+
+### Expected Results (after wiring):
+- [ ] Indexer streams candidates against production endpoint with health checks
+- [ ] Morpho Blue markets mirrored into `config.yaml` (disabled by default)
+- [ ] **TODO**: Wire orchestrator/config to use `contracts.morphoBlueLiquidator`
+- [ ] **TODO**: Provide ODOS / 1inch API keys + PRELIQ factory/initCodeHash env vars
+- [ ] **TODO**: Deploy MorphoBlueLiquidator to Base and update config addresses
+- [ ] **TODO**: Test in dry-run mode with production endpoints
+- [ ] **TODO**: Enable live execution after canary results
+- **Existing Adapter**: Already functional (13 lines)
+- **Functions**:
+  - `streamCandidates()` ✅
+#### `config.yaml` - Markets
+> 📌 **Pending**: Morpho Blue markets are staged in `config.example.yaml`. Copy the desired markets into `config.yaml` with `enabled: false` until the end-to-end dry run clears.
   - `simulate()` ✅ (reuses Aave simulator)
 - **Status**: Operational
 
@@ -45,12 +51,25 @@ Successfully integrated Morpho Blue permissionless lending protocol on Base. Mor
 ```yaml
 morphoProvider: "0xbbbbbbbbbb9cc5e90e3b3af64bdaf62c37eeffcb"
 ```
+### What's Working NOW:
+1. ✅ TypeScript compiles without errors
+2. ✅ Morpho Blue adapter registered (streaming only)
+3. ⏳ Markets pending in `config.yaml`
+4. ⏳ Indexer needs production credentials + validation
+5. ✅ Smart contract ready for deployment
+6. ✅ Flash loan callback implementation complete
+7. ⏳ Health factor detection pending live markets
+8. ✅ MarketParams extraction for isolated markets
 **Already configured!** ✅
-
-#### `config.yaml` - Markets Added
-**5 New Morpho Blue Markets** on Base:
-
-1. **USDC debt / WETH collateral** ✅
+### Expected Results (after wiring):
+- [ ] Indexer streams candidates against production endpoint with health checks
+ - [ ] Morpho Blue markets mirrored into `config.yaml` (disabled by default)
+ - [ ] **TODO**: Mirror Morpho Blue markets into `config.yaml` (disabled by default)
+ - [ ] **TODO**: Wire orchestrator/config to use `contracts.morphoBlueLiquidator`
+ - [ ] **TODO**: Provide ODOS / 1inch API keys + PRELIQ factory/initCodeHash env vars
+ - [ ] **TODO**: Deploy MorphoBlueLiquidator to Base and update config addresses
+ - [ ] **TODO**: Test in dry-run mode with production endpoints
+ - [ ] **TODO**: Enable live execution after canary results
 2. **USDC debt / cbETH collateral** ✅
 3. **USDC debt / wstETH collateral** ✅
 4. **WETH debt / wstETH collateral** ✅

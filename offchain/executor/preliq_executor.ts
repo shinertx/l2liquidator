@@ -8,6 +8,14 @@ import type { Candidate } from '../indexer/aave_indexer';
 import type { Plan } from '../simulator/simulate';
 import { sendPreLiqBundle } from './preliq_sender';
 
+async function safeErrorText(response: Response): Promise<string> {
+  try {
+    return await response.text();
+  } catch {
+    return '';
+  }
+}
+
 // Bundler3 addresses (ChainAgnosticBundlerV2)
 const BUNDLER3 = {
   [base.id]: '0x23055618898e202386e6c13955a58D3C68200BFB' as Address,
@@ -75,23 +83,24 @@ async function getOdosQuote(
 ): Promise<SwapQuote | null> {
   try {
     const odosApiKey = process.env.ODOS_API_KEY;
-    if (!odosApiKey) {
-      return null; // API key required
-    }
 
     const routerAddress = routerOverride ?? ODOS_ROUTER_V2[chainId as keyof typeof ODOS_ROUTER_V2];
-    if (!routerAddress) {
+    if (!routerAddress || !odosApiKey) {
       return null;
     }
 
     const slippagePercent = Math.max(1, slippageBps) / 100;
 
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (odosApiKey) {
+      headers.Authorization = `Bearer ${odosApiKey}`;
+    }
+
     const response = await fetch('https://api.odos.xyz/sor/quote/v2', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${odosApiKey}`,
-      },
+      headers,
       body: JSON.stringify({
         chainId,
         inputTokens: [{
@@ -110,6 +119,10 @@ async function getOdosQuote(
     });
 
     if (!response.ok) {
+      log.debug(
+        { chainId, status: response.status, reason: await safeErrorText(response), router: routerAddress },
+        'odos-price-request-failed',
+      );
       return null;
     }
 
@@ -118,10 +131,7 @@ async function getOdosQuote(
     // Get swap calldata
     const assembleResponse = await fetch('https://api.odos.xyz/sor/assemble', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${odosApiKey}`,
-      },
+      headers,
       body: JSON.stringify({
         pathId: data.pathId,
         userAddr: bundlerAddress,
@@ -129,6 +139,10 @@ async function getOdosQuote(
     });
 
     if (!assembleResponse.ok) {
+      log.debug(
+        { chainId, status: assembleResponse.status, router: routerAddress },
+        'odos-assemble-request-failed',
+      );
       return null;
     }
 
@@ -141,7 +155,7 @@ async function getOdosQuote(
       gasEstimate: BigInt(data.gasEstimate || 200000),
     };
   } catch (err) {
-    console.error('Odos quote failed:', err);
+    log.debug({ chainId, err: (err as Error).message }, 'odos-quote-failed');
     return null;
   }
 }
@@ -161,6 +175,7 @@ async function get1inchQuote(
   try {
     const oneinchApiKey = process.env.ONEINCH_API_KEY;
     if (!oneinchApiKey) {
+      log.debug({ chainId, tokenIn, tokenOut }, 'oneinch-missing-api-key');
       return null; // API key required
     }
 
@@ -183,6 +198,10 @@ async function get1inchQuote(
     });
 
     if (!response.ok) {
+      log.debug(
+        { chainId, status: response.status, reason: await safeErrorText(response), router: oneinchRouter },
+        'oneinch-quote-failed',
+      );
       return null;
     }
 
@@ -195,7 +214,7 @@ async function get1inchQuote(
       gasEstimate: BigInt(data.tx.gas || 250000),
     };
   } catch (err) {
-    console.error('1inch quote failed:', err);
+    log.debug({ chainId, err: (err as Error).message }, 'oneinch-quote-error');
     return null;
   }
 }
@@ -232,9 +251,10 @@ export async function buildPreLiqBundle(
   const oneInchRouter = chainPreliq.oneInchRouter ?? null;
   const slippageBps = cfg.preliq?.aggregator?.slippageBps ?? 50;
   const primary = cfg.preliq?.aggregator?.primary ?? 'odos';
+  const odosEnabled = Boolean(odosRouter && process.env.ODOS_API_KEY);
 
   // Step 1: Get swap quote (Odos primary, 1inch fallback)
-  const attemptOdosFirst = primary === 'odos';
+  const attemptOdosFirst = primary === 'odos' && odosEnabled;
   const attemptOneInchFirst = primary === 'oneinch';
 
   let swapQuote: SwapQuote | null = null;
@@ -242,7 +262,7 @@ export async function buildPreLiqBundle(
   const collateralSeized = params.seizeAmount > 0n ? params.seizeAmount : params.collateralAmount;
 
   const tryOdos = async () => {
-    if (!odosRouter) return null;
+    if (!odosEnabled || !odosRouter) return null;
     return getOdosQuote(
       params.chainId,
       params.collateralAsset,
@@ -276,12 +296,15 @@ export async function buildPreLiqBundle(
       swapQuote = await tryOdos();
     }
   } else {
-    swapQuote = await tryOdos();
-    if (!swapQuote) swapQuote = await tryOneInch();
+    swapQuote = await tryOneInch();
+    if (!swapQuote) swapQuote = await tryOdos();
   }
 
   if (!swapQuote) {
-    console.error('No swap quote available');
+    log.debug(
+      { chainId: params.chainId, borrower: params.borrower, collateral: params.collateralAsset, debt: params.debtAsset },
+      'preliq-swap-quote-missing',
+    );
     return null;
   }
 

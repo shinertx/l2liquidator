@@ -12,16 +12,24 @@ chains:
   - id: 1
     name: ethereum
     rpc: ${RPC_ETH}
+    rpcFallbacks:
+      - "https://eth.llamarpc.com"
+      - "https://ethereum.publicnode.com"
     privtx: ${PRIVTX_ETH}
     aaveProvider: "0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9e"
     uniV3Router: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
-    quoter: "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6"
+    quoter: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e"
     enabled: true
+    minNativeBalanceEth: 0.002
     tokens:
+      USDC:
+        address: "0xA0b86991C6218B36c1d19D4a2e9Eb0cE3606eB48"
+        decimals: 6
+        chainlinkFeed: "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6"
       DAI:
         address: "0x6B175474E89094C44Da98b954EedeAC495271d0F"
         decimals: 18
-        chainlinkFeed: "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6"
+        chainlinkFeed: "0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9"
       USDT:
         address: "0xdAC17F958D2ee523a2206206994597C13D831ec7"
         decimals: 6
@@ -29,7 +37,7 @@ chains:
       WBTC:
         address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599"
         decimals: 8
-        chainlinkFeed: "0xdeb288F737066589598e9214E782fa5A8ed689e8"
+        chainlinkFeed: "0xf4030086522a5beea4988f8ca5b36dbc97bee88c"
       WETH:
         address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
         decimals: 18
@@ -102,7 +110,7 @@ chains:
         decimals: 18
         chainlinkFeed: "0x6ce185860a4963106506C203335A2910413708e9"
       USDC:
-        address: "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8"
+        address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
         decimals: 6
         chainlinkFeed: "0x6200A5122Af8D5D9e69f4d526311Cd85241ACeC9"
       USDCn:
@@ -121,6 +129,7 @@ chains:
         address: "0x35751007a407ca6FEFfE80b3cB397736D2cf4dbe"
         decimals: 18
         chainlinkFeed: "0x517276B5972C4Db7E88B9F76Ee500E888a2D73C3"
+        feedDenomination: eth
       WETH:
         address: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
         decimals: 18
@@ -129,6 +138,7 @@ chains:
         address: "0x5979D7b546E38E414F7E9822514be443A4800529"
         decimals: 18
         chainlinkFeed: "0x87fE1503beFBF98C35c7526B0c488d950F822C0F"
+        feedDenomination: eth
   - id: 10
     name: optimism
     rpc: ${RPC_OP}
@@ -173,7 +183,7 @@ chains:
         decimals: 18
         chainlinkFeed: "0x8ea108096AdEA6Ac059cbEaE6862ce9BB52B4E87"
       USDC:
-        address: "0x7F5c764cBc14f9669B88837ca1490cCa17c31607"
+        address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"
         decimals: 6
         chainlinkFeed: "0x6379A975Ef93EC2bE87f56A02CCF8535dFAde201"
       USDCn:
@@ -196,6 +206,7 @@ chains:
         address: "0x1F32b1c2345538c0c6f582fCB022739c4A194Ebb"
         decimals: 18
         chainlinkFeed: "0x724E47194d97263ccb71FDad84b4fed18a8be387"
+        feedDenomination: eth
   - id: 8453
     name: base
     rpc: ${RPC_BASE}
@@ -211,6 +222,8 @@ chains:
     quoter: "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a"
     sequencerFeed: "0xBCF85224fc0756B9Fa45aA7892530B47e10b6433"
     enabled: true
+    ownerAllowlist:
+      - "0x89A6b89718baCdF5D717877ded7E6E12D25479A6"
     tokens:
       AAVE:
         address: "0x63706e401c06ac8513145b7687A14804d17f814b"
@@ -255,6 +268,7 @@ chains:
         address: "0x04C0599Ae5A44757c0af6F9eC3b93da8976c150A"
         decimals: 18
         chainlinkFeed: "0xFc4d1d7a8FD1E6719e361e16044b460737F12C44"
+        feedDenomination: eth
       WETH:
         address: "0x4200000000000000000000000000000000000006"
         decimals: 18
@@ -263,10 +277,12 @@ chains:
         address: "0xEDfa23602D0EC14714057867A78d01e94176BEA0"
         decimals: 18
         chainlinkFeed: "0x567E7f3DB2CD4C81872F829C8ab6556616818580"
+        feedDenomination: eth
       wstETH:
         address: "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452"
         decimals: 18
         chainlinkFeed: "0x56038D3998C42db18ba3B821bD1EbaB9B678e657"
+        feedDenomination: eth
   - id: 137
     name: polygon
     rpc: ${RPC_POLYGON}
@@ -373,6 +389,7 @@ chains:
         address: "0x03b54A6e9a984069379fae1a4fC4dBAE93B3bCCD"
         decimals: 18
         chainlinkFeed: "0xBD96b5ABBC6048c28184b462167E487533F2e35E"
+        feedDenomination: eth
 assets:
   AAVE:
     floorBps: 40
@@ -4457,7 +4474,7 @@ preliq:
   maxOracleDivergenceBps: 200
   minNetProfitUsd: 2
   aggregator:
-    primary: odos
+    primary: oneinch
     slippageBps: 40
   chains:
     "42161":

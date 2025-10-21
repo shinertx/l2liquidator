@@ -32,7 +32,7 @@
 ✅ Bundler3 Base:  0x23055618898e202386e6c13955a58D3C68200BFB
 ✅ Bundler3 ARB:   0x23055618898e202386e6c13955a58D3C68200BFB
 ✅ Bundler3 OP:    0x23055618898e202386e6c13955a58D3C68200BFB
-✅ Odos Router:    Mapped for all chains
+✅ 1inch Router:   Configured per chain (Odos fallback addresses mapped)
 ✅ 1inch Router:   0x1111111254EEB25477B68fb85Ed929f73A960582 (all chains)
 ⚠️  PreLiq Factory: Awaiting deployment
 ```
@@ -79,7 +79,7 @@ Decision (preliq_scorer.ts)
 
 Execution (preliq_executor.ts)
 ├─ Bundler3 multicall construction
-├─ Odos/1inch swap routing
+├─ 1inch swap routing (Odos fallback wired)
 ├─ Atomic execution (4 steps)
 └─ MEV protection (Timeboost + private)
 ```
@@ -126,7 +126,7 @@ HF 1.0-1.05 range vs standard <1.0
 - [ ] Deploy PreLiquidationFactory (Base, ARB, OP)
 - [ ] Update 3 addresses in morpho_preliq_indexer.ts
 - [ ] Implement CREATE2 with initCodeHash
-- [ ] Add Odos/1inch API keys
+- [ ] Add 1inch API key (Odos optional)
 
 ### Week 3: Integration
 - [ ] Wire into orchestrator (see INTEGRATION_SNIPPET.ts)
@@ -200,4 +200,3 @@ docker-compose restart worker
 **🚀 READY TO SHIP**
 
 Skeleton complete. Awaiting contract deployment to activate.
-

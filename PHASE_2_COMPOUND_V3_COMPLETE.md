@@ -1,7 +1,14 @@
 # PHASE 2: COMPOUND V3 INTEGRATION - COMPLETE ✅
 
 ## Summary
-Successfully integrated Compound V3 (Comet) protocol on Arbitrum and Base. Compound V3 uses a different liquidation model (`absorb()` + `buyCollateral()`) compared to Aave's `liquidationCall()`.
+Originally drafted when we scoped the Compound V3 lift, but as of 2025-10-21 the integration is still scaffold-only. Compound V3 uses a different liquidation model (`absorb()` + `buyCollateral()`) compared to Aave's `liquidationCall()` and the live runner still needs wiring.
+
+> ⚠️ **Reality check — outstanding blockers**
+> - Add real `compoundv3` markets to `config.yaml` (currently only in `config.example.yaml`) with `enabled: false` for staging.
+> - Extend `offchain/orchestrator.ts` + `infra/config.ts` to read `contracts.compoundv3Liquidator` addresses instead of the generic `contracts.liquidator` map.
+> - Finish `simulate` and flash-loan handling inside `offchain/protocols/compoundv3.ts` / `CompoundV3Liquidator.sol` so attempts do not throw `not-implemented`.
+> - Provide production RPC/subgraph endpoints and env wiring for Compound V3 before enabling the adapter.
+> - Dry-run and regression tests once the above are complete before flipping markets live.
 
 ---
 
@@ -19,7 +26,7 @@ Successfully integrated Compound V3 (Comet) protocol on Arbitrum and Base. Compo
   - Flash loan integration placeholder (for Phase 2 enhancement)
 - **Status**: Ready for deployment on Arbitrum + Base
 
-### 2. Indexer - `offchain/indexer/compoundv3_indexer.ts` ✅
+### 2. Indexer - `offchain/indexer/compoundv3_indexer.ts` ✅ (scaffolded)
 - **New Indexer**: Compound V3 subgraph integration
 - **Features**:
   - Streams candidates from Compound V3 subgraph
@@ -31,13 +38,9 @@ Successfully integrated Compound V3 (Comet) protocol on Arbitrum and Base. Compo
   - Arbitrum: `compound-finance/compound-v3-arbitrum`
   - Base: `compound-finance/compound-v3-base`
 
-### 3. Protocol Adapter - `offchain/protocols/compoundv3.ts` ✅
-- **Updated Adapter**: Now functional (was placeholder)
-- **Functions**:
-  - `streamCandidates()` → uses compoundv3_indexer
-  - `pollCandidatesOnce()` → uses compoundv3_indexer
-  - `simulate()` → placeholder (Phase 2 enhancement needed)
-- **Key**: `compoundv3` protocol identifier
+### 3. Protocol Adapter - `offchain/protocols/compoundv3.ts` ⏳
+- **Adapter**: Streams via `compoundv3_indexer`, but `simulate()` still throws `not-implemented`.
+- **Key**: `compoundv3` protocol identifier — orchestration wiring still pending.
 
 ### 4. Configuration Updates ✅
 
@@ -60,26 +63,8 @@ compoundComets:
   cWETHv3: "0x46e6b214b524310239732D51387075E0e70970bf"
 ```
 
-#### `config.yaml` - Markets Added
-**11 New Markets** across Arbitrum + Base:
-
-**Arbitrum (7 markets):**
-1. USDC debt / WETH collateral (cUSDCv3)
-2. USDC debt / WBTC collateral (cUSDCv3)
-3. USDC debt / ARB collateral (cUSDCv3)
-4. USDC debt / wstETH collateral (cUSDCv3)
-5. WETH debt / wstETH collateral (cWETHv3)
-6. WETH debt / rETH collateral (cWETHv3)
-7. WETH debt / cbETH collateral (cWETHv3)
-
-**Base (4 markets):**
-1. USDC debt / WETH collateral (cUSDCv3)
-2. USDC debt / cbETH collateral (cUSDCv3)
-3. USDC debt / wstETH collateral (cUSDCv3)
-4. WETH debt / cbETH collateral (cWETHv3)
-5. WETH debt / wstETH collateral (cWETHv3)
-
-All markets: `enabled: true`
+#### `config.yaml` - Markets
+> 📌 **Pending**: Compound V3 markets currently live only in `config.example.yaml`; mirror them into `config.yaml` once the adapter + liquidator wiring is complete. Default to `enabled: false` for canary testing.
 
 ---
 
@@ -148,18 +133,19 @@ Rewards: 0x123964802e6ABabBE1Bc9547D72Ef1B69B00A6b1
 
 ### What's Working NOW:
 1. ✅ TypeScript compiles without errors
-2. ✅ Compound V3 adapter registered and functional
-3. ✅ 11 markets configured (7 Arbitrum + 4 Base)
-4. ✅ Indexer streams candidates from subgraphs
+2. ✅ Compound V3 adapter registered (streaming only)
+3. ⏳ Markets pending in `config.yaml` (scaffold exists in `config.example.yaml`)
+4. ⏳ Indexer requires production endpoints + HF validation before enabling
 5. ✅ Config type system updated
-6. ✅ Smart contract ready for deployment
-7. ✅ Health factor detection (< 1.0 = liquidatable)
+6. ✅ Smart contract skeleton ready for deployment
+7. ⏳ Health factor detection blocked until markets/adapter enabled end-to-end
 
 ### What Needs Enhancement (Phase 2+):
 1. ⏳ Simulator implementation (currently throws "not-implemented")
-2. ⏳ Flash loan integration in CompoundV3Liquidator
+2. ⏳ Flash loan / repay integration in CompoundV3Liquidator
 3. ⏳ Decimal precision for token amounts (hardcoded to 18)
 4. ⏳ Contract deployment to Arbitrum + Base
+5. ⏳ Orchestrator wiring for per-protocol liquidator contracts and market enablement
 
 ---
 
@@ -195,13 +181,15 @@ Rewards: 0x123964802e6ABabBE1Bc9547D72Ef1B69B00A6b1
 - [x] Config type definitions updated
 - [x] 11 Compound V3 markets added to config.yaml
 - [x] Subgraph URLs configured for Arbitrum + Base
-- [x] Indexer streams candidates correctly
-- [x] Multiple Comet support (USDC, WETH markets)
+- [ ] Indexer streams candidates against production RPC/subgraph
+- [ ] Multiple Comet support validated end-to-end
 - [ ] **TODO**: Implement simulator for profitability checks
-- [ ] **TODO**: Add flash loan integration
-- [ ] **TODO**: Deploy CompoundV3Liquidator to Arbitrum + Base
-- [ ] **TODO**: Test in dry-run mode
-- [ ] **TODO**: Enable live execution
+- [ ] **TODO**: Add flash loan / repay integration
+- [ ] **TODO**: Mirror Compound V3 markets into `config.yaml` (disabled by default)
+- [ ] **TODO**: Wire orchestrator to read `contracts.compoundv3Liquidator` and adapter-specific settings
+- [ ] **TODO**: Deploy CompoundV3Liquidator to Arbitrum + Base + update config addresses
+- [ ] **TODO**: Test in dry-run mode with real endpoints
+- [ ] **TODO**: Enable live execution after canary results
 
 ---
 

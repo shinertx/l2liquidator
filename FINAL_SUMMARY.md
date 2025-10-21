@@ -19,8 +19,8 @@ All Pre-Liquidation Alpha code is **FINISHED**. Build successful. Integrated int
    - Polling loop with block tracking
 
 2. **`preliq_executor.ts`** (8.4 KB) - Execution Layer
-   - Odos Router V2 API integration (primary)
-   - 1inch V5 API integration (fallback)
+   - 1inch V5 API integration (primary)
+   - Odos Router V2 fallback when API key present
    - Bundler3 multicall construction (4 atomic steps)
    - Swap routing with profitability calculation
    - Ready for transaction submission (placeholder)
@@ -41,8 +41,8 @@ All Pre-Liquidation Alpha code is **FINISHED**. Build successful. Integrated int
 5. **`morpho_addresses.ts`** (2.7 KB) - Configuration
    - Morpho Blue: 0xBBBB...FFCb (all chains)
    - Bundler3: 0x2305...BFB (Base/ARB/OP)
-   - Odos Router V2: Per-chain addresses
    - 1inch V5: 0x1111...0582 (all chains)
+   - Odos Router V2: Fallback addresses mapped per chain
    - PreLiquidation Factory: Placeholder (awaiting deployment)
 
 ### Orchestrator Integration (60 lines)
@@ -74,7 +74,7 @@ gauge.preLiqProfitUsd      // Latest profit
 │                    PRE-LIQUIDATION ALPHA                     │
 │                                                              │
 │  Factory Events → CREATE2 → Fetch Params → Check Auth →     │
-│  Calculate CF/IF → Score (7 checks) → Odos/1inch Quote →    │
+│  Calculate CF/IF → Score (7 checks) → 1inch/Odos Quote →    │
 │  Build Bundler3 Multicall → Submit → Profit                 │
 └─────────────────────────────────────────────────────────────┘
 
@@ -128,12 +128,12 @@ RESULT: 10x opportunity surface, 3-10x revenue multiplier
 - [x] Build morpho_addresses.ts
 - [x] Integrate into orchestrator.ts
 - [x] Add Prometheus metrics
-- [x] Configure Odos Router V2 addresses
 - [x] Configure 1inch V5 addresses
+- [x] Map Odos Router V2 fallback addresses
 - [x] Configure Bundler3 addresses
 - [x] Implement CREATE2 computation (placeholder for initCodeHash)
-- [x] Implement Odos API integration (needs API key)
 - [x] Implement 1inch API integration (needs API key)
+- [x] Implement Odos API integration (optional fallback)
 - [x] Add dry-run mode support
 - [x] TypeScript compilation successful (0 errors)
 - [x] JavaScript output generated (dist/ folder)
@@ -144,8 +144,8 @@ RESULT: 10x opportunity surface, 3-10x revenue multiplier
 - [ ] Deploy PreLiquidationFactory.sol (Solidity work)
 - [ ] Update 3 factory addresses in morpho_preliq_indexer.ts
 - [ ] Update initCodeHash in computeOfferAddress()
-- [ ] Add ODOS_API_KEY to .env
 - [ ] Add ONEINCH_API_KEY to .env
+- [ ] Add ODOS_API_KEY to .env (optional fallback)
 - [ ] Set PRELIQ_ENABLED=1
 - [ ] Test in dry-run mode
 - [ ] Implement transaction submission logic

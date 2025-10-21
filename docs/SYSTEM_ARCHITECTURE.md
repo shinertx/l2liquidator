@@ -143,7 +143,7 @@ Automated liquidation engine that maximizes profit by liquidating undercollatera
 │  │    │      BUNDLER3 EXECUTION (Pre-Liq)         │            │          │
 │  │    │                                           │            │          │
 │  │    │  1. onPreLiquidate(offer, borrower, ...)│            │          │
-│  │    │  2. Swap collateral → debt (Odos/1inch) │            │          │
+│  │    │  2. Swap collateral → debt (1inch/Odos) │            │          │
 │  │    │  3. Repay debt to Morpho                │            │          │
 │  │    │  4. Transfer profit to beneficiary      │            │          │
 │  │    │                                           │            │          │
